@@ -22,7 +22,7 @@ namespace ga {
     void Reset() { g_base.store(0, std::memory_order_release); }
 }
 
-// Forward declarations into the feature layer (avoids a heavy include here).
+
 namespace features { void GameTick(); }
 namespace noclip   { bool GateActive(); }
 namespace lagport  { bool FreezeActive(); }
@@ -34,13 +34,12 @@ namespace game {
 
     uintptr_t Root() { return g_root.load(std::memory_order_acquire); }
     void CaptureRoot(uintptr_t world) {
-        // DB_CaptureRoot stores every value, including null, before forwarding.
+
         g_root.store(world, std::memory_order_release);
     }
     void ResetRuntimeState() { CaptureRoot(0); }
 
-    // Root()->[+40]->[+72] (the local player object), matching the original's
-    // navigation in sub_180085FC0 / sub_18002D1A0.
+
     uintptr_t Player() {
         const uintptr_t root = Root();
         if (!root) return 0;
@@ -53,14 +52,13 @@ namespace game {
         if (!player) return;
         struct Vec2 { float x, y; };
         using Fn = intptr_t(__fastcall*)(uintptr_t, const Vec2*);
-        auto fn = reinterpret_cast<Fn>(ga::Rva(ga::rva::MOVETO));
+        auto fn = reinterpret_cast<Fn>(ga::Rva(ga::rva::MOVE_TO));
         if (!fn) return;
         const Vec2 position{x, y};
         fn(player, &position);
     }
 
-    // Root capture: detour GA+WORLD_ROOT_FN; first arg is the World 'this'
-    // (sub_180085800 does exactly `qword_1801B2E10 = a1; return orig(a1);`).
+
     static uintptr_t (__fastcall* oWorldFn)(uintptr_t) = nullptr;
     static uintptr_t __fastcall hkWorldFn(uintptr_t a1) {
         static bool once = false;
@@ -76,9 +74,9 @@ namespace game {
         if (g_rootCaptureInstalled.load(std::memory_order_acquire))
             return;
 
-        void* target = ga::Rva(ga::rva::WORLD_ROOT_FN);
+        void* target = ga::Rva(ga::rva::WORLD_CONTEXT_UPDATE);
         DBLOG("InstallRootCapture: target=%p (GA+0x%llX)", target,
-              (unsigned long long)ga::rva::WORLD_ROOT_FN);
+              (unsigned long long)ga::rva::WORLD_CONTEXT_UPDATE);
         if (!target)
             return;
 
@@ -92,16 +90,14 @@ namespace game {
         return g_rootCaptureInstalled.load(std::memory_order_acquire);
     }
 
-    // Per-frame game-thread update detour (GA+WORLD_UPDATE_FN). sub_1800856F0
-    // does feature work, then `if (!gates) return orig(a1); return result;` -
-    // i.e. when the noclip gate is up the original update is skipped too.
+
     static uintptr_t (__fastcall* oGameTick)(uintptr_t) = nullptr;
     static uintptr_t __fastcall hkGameTick(uintptr_t a1) {
         static bool once = false;
         if (!once) { once = true; DBLOG("hkGameTick: first call a1=%p", (void*)a1); }
         features::GameTick();
         if (noclip::GateActive() || lagport::FreezeActive())
-            return 0;                       // noclip / lag-port: suppress this frame's update
+            return 0;
         return oGameTick ? oGameTick(a1) : 0;
     }
 
@@ -109,9 +105,9 @@ namespace game {
         if (g_gameTickInstalled.load(std::memory_order_acquire))
             return;
 
-        void* target = ga::Rva(ga::rva::WORLD_UPDATE_FN);
+        void* target = ga::Rva(ga::rva::GAME_TICK);
         DBLOG("InstallGameTick: target=%p (GA+0x%llX)", target,
-              (unsigned long long)ga::rva::WORLD_UPDATE_FN);
+              (unsigned long long)ga::rva::GAME_TICK);
         if (!target)
             return;
 

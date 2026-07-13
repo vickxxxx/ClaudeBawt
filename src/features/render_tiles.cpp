@@ -1,11 +1,6 @@
-// Defensive tile-map overlay.
-//
-// Recovered layouts:
-//   DB_TileQuery (0x1800C9AF0): root+0x28 -> world, world+0x58 -> square
-//   array, dimensions at world+0xFC/+0x100, and x + height*y indexing.
-//   A square stores type/object/ground-properties at +0x44/+0x48/+0x50.
-// Projection matches the existing client convention: negate world Y and use
-// 81.25% of the back-buffer width.
+
+
+
 #include "render_tiles.h"
 
 #include "config.h"
@@ -118,7 +113,7 @@ ImU32 TileColor(uintptr_t square) {
     return IM_COL32(80, 210, 125, 70);
 }
 
-} // namespace
+}
 
 void Tick() {
     if (!g_cfg.renderTiles || !ImGui::GetCurrentContext())
@@ -129,8 +124,9 @@ void Tick() {
     int width = 0, height = 0;
     float px = 0.0f, py = 0.0f;
     if (!root || !player || !Read(root + 0x28, world) || !world ||
-        !Read(world + 0x58, squares) || !squares ||
-        !Read(world + 0xFC, width) || !Read(world + 0x100, height) ||
+        !Read(world + ga::off::WORLD_TILE_GRID, squares) || !squares ||
+        !Read(world + ga::off::WORLD_MAP_WIDTH, width) ||
+        !Read(world + ga::off::WORLD_MAP_HEIGHT, height) ||
         width <= 0 || height <= 0 || width > kMaxDimension ||
         height > kMaxDimension || !Read(player + 0x3C, px) ||
         !Read(player + 0x40, py) || !std::isfinite(px) || !std::isfinite(py))
@@ -160,7 +156,7 @@ void Tick() {
                 static_cast<uint64_t>(x) + static_cast<uint64_t>(height) * y;
             uintptr_t square = 0;
             if (!Read(squares + 0x20 + sizeof(uintptr_t) * index, square))
-                return; // container changed or became stale: fail closed
+                return;
 
             ImVec2 p[4];
             if (!Project(matrix, static_cast<float>(x),     static_cast<float>(y),     p[0]) ||
@@ -177,4 +173,4 @@ void Tick() {
     }
 }
 
-} // namespace render_tiles
+}

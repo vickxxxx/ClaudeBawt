@@ -96,7 +96,7 @@ bool SnapshotUnits(uintptr_t root, uintptr_t player, std::vector<Unit>& units) {
     uintptr_t world = 0, manager = 0, list = 0;
     uint32_t count = 0;
     if (!Read(root + 0x28, world) || !world ||
-        !Read(world + 0xB0, manager) || !manager ||
+        !Read(world + ga::off::WORLD_OBJECT_MANAGER, manager) || !manager ||
         !Read(manager + 0x18, list) || !list ||
         !Read(list + 0x18, count) || count == 0 || count >= kMaxObjects)
         return false;
@@ -111,18 +111,18 @@ bool SnapshotUnits(uintptr_t root, uintptr_t player, std::vector<Unit>& units) {
         Unit unit{};
         uintptr_t status = 0;
         uint8_t targetable = 0, invulnerable = 0;
-        if (!Read(object + ga::off::OBJ_X, unit.x) ||
-            !Read(object + ga::off::OBJ_Y, unit.y) ||
-            !Read(object + ga::off::OBJ_TYPE, unit.type) ||
-            !Read(object + ga::off::OBJ_HP, unit.hp) ||
-            !Read(object + ga::off::OBJ_STATUS_PTR, status))
+        if (!Read(object + ga::off::OBJECT_X, unit.x) ||
+            !Read(object + ga::off::OBJECT_Y, unit.y) ||
+            !Read(object + ga::off::OBJECT_TYPE, unit.type) ||
+            !Read(object + ga::off::OBJECT_HEALTH, unit.hp) ||
+            !Read(object + ga::off::OBJECT_STATUS, status))
             continue;
         if (!std::isfinite(unit.x) || !std::isfinite(unit.y))
             continue;
 
         if (status)
-            Read(status + ga::off::STATUS_TARGETABLE, targetable);
-        Read(object + ga::off::OBJ_INVULN, invulnerable);
+            Read(status + ga::off::STATUS_CAN_TARGET, targetable);
+        Read(object + ga::off::OBJECT_INVULNERABLE, invulnerable);
         unit.targetable = targetable != 0;
         unit.invulnerable = invulnerable != 0;
         units.push_back(unit);
@@ -174,7 +174,7 @@ void DrawUnits(const Matrix& matrix, const std::vector<Unit>& units) {
     }
 }
 
-} // namespace
+}
 
 void Tick() {
     const bool renderUnits = g_cfg.renderUnits;
@@ -190,8 +190,8 @@ void Tick() {
     Matrix matrix{};
     float playerX = 0.0f, playerY = 0.0f;
     if (!ReadCamera(root, matrix) ||
-        !Read(player + ga::off::OBJ_X, playerX) ||
-        !Read(player + ga::off::OBJ_Y, playerY) ||
+        !Read(player + ga::off::OBJECT_X, playerX) ||
+        !Read(player + ga::off::OBJECT_Y, playerY) ||
         !std::isfinite(playerX) || !std::isfinite(playerY))
         return;
 
@@ -205,4 +205,4 @@ void Tick() {
     }
 }
 
-} // namespace render_units_grid
+}

@@ -1,10 +1,6 @@
-// Projectile and AOE debug overlay.
-//
-// Runtime layout recovered from the original DogeBawt projectile snapshot:
-//   root+0x28 -> world, world+0xB8 -> manager, manager+0x18 -> list
-//   list+0x18 = count, list+0x30+0x18*i = projectile
-//   projectile+0x16C = start tick, +0x190 = lifetime
-//   GA+0x7282F0 evaluates a projectile at a lifetime-relative time offset.
+
+
+
 #include "render_projectiles.h"
 
 #include "config.h"
@@ -23,7 +19,7 @@ extern int g_viewW, g_viewH;
 namespace render_projectiles {
 namespace {
 
-constexpr uintptr_t kProjectilePositionRva = 0x7282F0;
+constexpr uintptr_t kProjectilePositionRva = 0x63CBA0;
 constexpr int kAoeObjectType = 14174;
 constexpr uint32_t kMaxProjectileCount = 10000;
 constexpr float kMaxLifetimeMs = 125000.0f;
@@ -90,8 +86,7 @@ bool ProjectilePosition(uintptr_t projectile, float timeMs, Vec2& out) {
         reinterpret_cast<ProjectilePositionFn>(ga::Rva(kProjectilePositionRva));
     if (!fn || !SanePointer(projectile) || !std::isfinite(timeMs)) return false;
 
-    // The native routine writes through both out parameters; match the buffers
-    // used by the dodge implementation to avoid an r8 stack overwrite.
+
     float scratch[4]{};
     int scratchInt[2]{};
     const uint64_t packed = fn(projectile, timeMs, scratch, scratchInt);
@@ -172,7 +167,8 @@ void TickGuarded() {
     if (!SanePointer(root)) return;
     const uintptr_t world = *reinterpret_cast<uintptr_t*>(root + 0x28);
     if (!SanePointer(world)) return;
-    const uintptr_t manager = *reinterpret_cast<uintptr_t*>(world + 0xB8);
+    const uintptr_t manager =
+        *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_PROJECTILE_MANAGER);
     if (!SanePointer(manager)) return;
     const uintptr_t list = *reinterpret_cast<uintptr_t*>(manager + 0x18);
     if (!SanePointer(list)) return;
@@ -185,7 +181,7 @@ void TickGuarded() {
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
     if (!draw) return;
 
-    const int gameTime = *reinterpret_cast<int*>(world + 0x80);
+    const int gameTime = *reinterpret_cast<int*>(world + ga::off::WORLD_GAME_TIME);
     for (uint32_t i = 0; i < count; ++i) {
         const uintptr_t projectile =
             *reinterpret_cast<uintptr_t*>(list + 0x30 + 0x18ull * i);
@@ -194,13 +190,13 @@ void TickGuarded() {
     }
 }
 
-} // namespace
+}
 
 void Install() {}
 
 void Tick() {
 #if defined(_MSC_VER)
-    // Lists can be invalidated while Present is reading them during map changes.
+
     __try {
         TickGuarded();
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -210,4 +206,4 @@ void Tick() {
 #endif
 }
 
-} // namespace render_projectiles
+}

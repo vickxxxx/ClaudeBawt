@@ -91,7 +91,11 @@ namespace overlay {
 
         char dllPath[MAX_PATH]{};
         char boldPath[MAX_PATH]{};
-        HMODULE self = GetModuleHandleA("dogebawt.dll");
+        HMODULE self = nullptr;
+        GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCSTR>(&Init), &self);
         GetModuleFileNameA(self, dllPath, MAX_PATH);
         char* slash = std::strrchr(dllPath, '\\');
         if (slash) *slash = '\0';

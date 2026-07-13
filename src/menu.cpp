@@ -26,39 +26,39 @@ namespace menu {
 
         void DrawIcon(ImDrawList* dl, ImVec2 p, int icon) {
             const float s = 1.0f;
-            if (icon == 0) { // crossed tools
+            if (icon == 0) {
                 dl->AddLine(ImVec2(p.x+5,p.y+5), ImVec2(p.x+25,p.y+25), kBlack, 7);
                 dl->AddLine(ImVec2(p.x+25,p.y+5), ImVec2(p.x+7,p.y+25), kBlack, 7);
                 dl->AddLine(ImVec2(p.x+5,p.y+5), ImVec2(p.x+25,p.y+25), IM_COL32(100,100,105,255), 3);
                 dl->AddLine(ImVec2(p.x+25,p.y+5), ImVec2(p.x+7,p.y+25), kPurple, 3);
-            } else if (icon == 1) { // nexus temple
+            } else if (icon == 1) {
                 dl->AddTriangleFilled(ImVec2(p.x+16,p.y+3), ImVec2(p.x+3,p.y+12), ImVec2(p.x+29,p.y+12), kWhite);
                 PixelRect(dl,p,5,12,22,4,kBlack); PixelRect(dl,p,7,14,4,12,kWhite);
                 PixelRect(dl,p,14,14,4,12,kWhite); PixelRect(dl,p,21,14,4,12,kWhite);
                 PixelRect(dl,p,4,26,24,4,kWhite);
-            } else if (icon == 2) { // aim reticle
+            } else if (icon == 2) {
                 dl->AddRect(ImVec2(p.x+3,p.y+3), ImVec2(p.x+12,p.y+12), kWhite, 2.0f, ImDrawFlags_None, 4.0f);
                 dl->AddRect(ImVec2(p.x+20,p.y+3), ImVec2(p.x+29,p.y+12), kWhite, 2.0f, ImDrawFlags_None, 4.0f);
                 dl->AddRect(ImVec2(p.x+3,p.y+20), ImVec2(p.x+12,p.y+29), kWhite, 2.0f, ImDrawFlags_None, 4.0f);
                 dl->AddRect(ImVec2(p.x+20,p.y+20), ImVec2(p.x+29,p.y+29), kWhite, 2.0f, ImDrawFlags_None, 4.0f);
                 dl->AddRectFilled(ImVec2(p.x+13,p.y+13), ImVec2(p.x+19,p.y+19), kPurple);
-            } else if (icon == 3) { // cursor + TP
+            } else if (icon == 3) {
                 dl->AddTriangleFilled(ImVec2(p.x+4,p.y+3), ImVec2(p.x+5,p.y+27), ImVec2(p.x+12,p.y+19), kWhite);
                 dl->AddLine(ImVec2(p.x+5,p.y+3), ImVec2(p.x+5,p.y+27), kBlack, 2);
                 dl->AddText(ImVec2(p.x+14,p.y+4), kPurple, "TP");
-            } else if (icon == 4) { // WASD
+            } else if (icon == 4) {
                 const char* keys[] = {"W","A","S","D"};
                 const ImVec2 pos[] = {{11,2},{2,16},{11,16},{20,16}};
                 for (int i=0;i<4;++i) {
                     dl->AddRectFilled(ImVec2(p.x+pos[i].x,p.y+pos[i].y), ImVec2(p.x+pos[i].x+9,p.y+pos[i].y+12), kWhite, 1);
                     dl->AddText(ImVec2(p.x+pos[i].x+1,p.y+pos[i].y-1), kBlack, keys[i]);
                 }
-            } else if (icon == 5) { // follow: original-style door/arrow, not generated sprite #6
+            } else if (icon == 5) {
                 dl->AddRectFilled(ImVec2(p.x+5,p.y+5), ImVec2(p.x+21,p.y+27), kWhite);
                 dl->AddRect(ImVec2(p.x+5,p.y+5), ImVec2(p.x+21,p.y+27), kBlack, 0.0f, ImDrawFlags_None, 3.0f);
                 dl->AddLine(ImVec2(p.x+11,p.y+16), ImVec2(p.x+29,p.y+8), IM_COL32(62,210,79,255), 4);
                 dl->AddTriangleFilled(ImVec2(p.x+29,p.y+8), ImVec2(p.x+20,p.y+7), ImVec2(p.x+27,p.y+16), IM_COL32(62,210,79,255));
-            } else if (icon == 6 || icon == 7) { // gears
+            } else if (icon == 6 || icon == 7) {
                 dl->AddCircleFilled(ImVec2(p.x+16,p.y+16), 13, kWhite, 12);
                 dl->AddCircleFilled(ImVec2(p.x+16,p.y+16), 7, kBlack, 12);
                 dl->AddCircleFilled(ImVec2(p.x+16,p.y+16), 4, kPurple, 12);
@@ -67,7 +67,7 @@ namespace menu {
                     ImVec2 c(p.x+16+std::cos(a)*13, p.y+16+std::sin(a)*13);
                     dl->AddRectFilled(ImVec2(c.x-3,c.y-3), ImVec2(c.x+3,c.y+3), kWhite);
                 }
-            } else { // raven silhouette
+            } else {
                 dl->AddCircleFilled(ImVec2(p.x+18,p.y+18), 10, kBlack, 10);
                 dl->AddTriangleFilled(ImVec2(p.x+8,p.y+13), ImVec2(p.x+2,p.y+8), ImVec2(p.x+12,p.y+7), kBlack);
                 dl->AddTriangleFilled(ImVec2(p.x+20,p.y+8), ImVec2(p.x+24,p.y+2), ImVec2(p.x+26,p.y+11), kBlack);
@@ -395,7 +395,7 @@ namespace menu {
         ImGui::SetNextWindowSizeConstraints(ImVec2(760.0f * scale, 430.0f * scale), display);
 
         const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar;
-        if (!ImGui::Begin("##DogeBawt", &s_open, flags)) {
+        if (!ImGui::Begin("##Client", &s_open, flags)) {
             ImGui::End();
             return;
         }
@@ -411,7 +411,7 @@ namespace menu {
         ImGui::SetCursorPos(ImVec2(17, 35));
         if (s_boldFont) ImGui::PushFont(s_boldFont);
         ImGui::SetWindowFontScale(1.65f);
-        ImGui::TextUnformatted("DogeBawt");
+        ImGui::TextUnformatted("Client");
         ImGui::SetWindowFontScale(1.0f);
         if (s_boldFont) ImGui::PopFont();
         ImGui::SetCursorPos(ImVec2(winW-137, 37));

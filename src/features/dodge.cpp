@@ -1,11 +1,6 @@
-// dodge.cpp - Auto Dodge.
-//
-// Live-projectile path recovered from:
-//   sub_180085830 -> sub_18002A0C0 -> sub_1800D3270
-//   projectile builder sub_1800C9CA0
-//   collision test sub_1800D2AC0
-//   ring sampler sub_1800D2E40
-//   map/segment test sub_1800D2510
+
+
+
 #include "features.h"
 #include "config.h"
 #include "il2cpp.h"
@@ -60,33 +55,28 @@ struct TileInfo {
     bool blocked = false;
 };
 
-// DB_InstallHooks: GA + 10,740,848 and GA + 10,767,104.
-constexpr uintptr_t kMoveUpdateRva = 0xA3E470;
-constexpr uintptr_t kMoveSpeedRva = 0xA44B00;
-// Late assignment at DB_InstallHooks+0x2E0; called by sub_1800C9CA0.
-constexpr uintptr_t kProjectilePositionRva = 0x7282F0;
-constexpr uintptr_t kPlayerUpdateRva = 0xA45AD0;
 
-// dword_1801B2CCC = 0x3EE978B9; dword_1801B2CD0 = 200; dword_1801B2CDC = 0x3CA3D70A;
-// dword_1801B2CE0 = 0x42740000. All read straight from the binary.
-// Hit Box Size (dword_1801B2CCC, default 0.456) and Move Away Buffer
-// (dword_1801B2CD0, default 200) are user-tunable in the original: read them
-// from config (g_cfg.dodgeHitboxSize / dodgeMoveAwayMs) rather than hardcoding.
+constexpr uintptr_t kMoveUpdateRva = 0x35E160;
+constexpr uintptr_t kMoveSpeedRva = 0x362770;
+
+constexpr uintptr_t kProjectilePositionRva = 0x63CBA0;
+constexpr uintptr_t kPlayerUpdateRva = 0x363600;
+constexpr uintptr_t kMovementPushOffset = 0x788;
+
+
 constexpr float kCandidatePadding = 0.06f;
-constexpr float kDangerWeight = 0.02f;         // 0x3CA3D70A
-constexpr float kDistanceWeight = 61.0f;       // 0x42740000
+constexpr float kDangerWeight = 0.02f;
+constexpr float kDistanceWeight = 61.0f;
 constexpr float kTwoPi = 6.2831855f;
 constexpr unsigned kNoThreatTime = 40000;
-// AoE/bomb objects (klass+1700 == 14174). sub_1800C9CA0 extends their modeled
-// lifetime by 500ms and never lets them expire, so the dodge keeps clearing the
-// blast for the full detonation window.
+
+
 constexpr int kAoeObjectType = 14174;
 constexpr float kAoeLifetimeBonusMs = 500.0f;
 
 using MoveUpdateFn = int64_t(__fastcall*)(uintptr_t, float, float);
-// The move-speed getter (GA+0xA44B00) is an il2cpp instance method: it reads
-// `this` (the player) from rcx. sub_18002A0C0 calls it with rcx still holding
-// the player, so it MUST be invoked with the player pointer.
+
+
 using MoveSpeedFn = float(__fastcall*)(uintptr_t);
 using ProjectilePositionFn =
     uint64_t(__fastcall*)(uintptr_t, float, float*, int*);
@@ -106,9 +96,12 @@ bool QueryTile(Vec2 point, TileInfo& out) {
     const uintptr_t root = game::Root();
     const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
     if (!world) return false;
-    const uintptr_t squares = *reinterpret_cast<uintptr_t*>(world + 88);
-    const int height = *reinterpret_cast<int*>(world + 256);
-    const int width = *reinterpret_cast<int*>(world + 252);
+    const uintptr_t squares =
+        *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_TILE_GRID);
+    const int height =
+        *reinterpret_cast<int*>(world + ga::off::WORLD_MAP_HEIGHT);
+    const int width =
+        *reinterpret_cast<int*>(world + ga::off::WORLD_MAP_WIDTH);
     if (!squares || height <= 0 || width <= 0) return false;
 
     const int x = static_cast<int>(point.x);
@@ -148,8 +141,8 @@ bool QueryTile(Vec2 point, TileInfo& out) {
 }
 
 bool SegmentBlocked(Vec2 from, Vec2 to) {
-    // sub_1800D2510 rounds the segment midpoint, tests the four surrounding
-    // tile centers, and rejects a blocking center within 0.9 world units.
+
+
     const float midpointX = std::round((from.x + to.x) * 0.5f);
     const float midpointY = std::round((from.y + to.y) * 0.5f);
     static constexpr Vec2 corners[] = {
@@ -188,7 +181,9 @@ bool SegmentBlocked(Vec2 from, Vec2 to) {
 }
 
 int CurrentGameTime(uintptr_t world) {
-    return world ? *reinterpret_cast<int*>(world + 128) : 0;
+    return world
+        ? *reinterpret_cast<int*>(world + ga::off::WORLD_GAME_TIME)
+        : 0;
 }
 
 using VisibilityMap = std::unordered_map<int, bool>;
@@ -200,7 +195,9 @@ VisibilityMap SnapshotVisibility() {
 
     const uintptr_t root = game::Root();
     const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
-    const uintptr_t manager = world ? *reinterpret_cast<uintptr_t*>(world + 176) : 0;
+    const uintptr_t manager = world
+        ? *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_OBJECT_MANAGER)
+        : 0;
     const uintptr_t list = manager ? *reinterpret_cast<uintptr_t*>(manager + 24) : 0;
     if (!list) return visibility;
 
@@ -224,8 +221,8 @@ bool ShooterVisible(int attacker, const VisibilityMap& visibility) {
     const auto found = visibility.find(attacker);
     if (found != visibility.end())
         return found->second;
-    // DogeBawt initializes the record as visible and only replaces it when an
-    // owner match exists in the object snapshot.
+
+
     return true;
 }
 
@@ -236,7 +233,9 @@ std::vector<Vec2> GatherEnemies() {
 
     const uintptr_t root = game::Root();
     const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
-    const uintptr_t manager = world ? *reinterpret_cast<uintptr_t*>(world + 176) : 0;
+    const uintptr_t manager = world
+        ? *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_OBJECT_MANAGER)
+        : 0;
     const uintptr_t list = manager ? *reinterpret_cast<uintptr_t*>(manager + 24) : 0;
     if (!list) return enemies;
 
@@ -247,11 +246,11 @@ std::vector<Vec2> GatherEnemies() {
     for (uint32_t i = 0; i < count; ++i) {
         const uintptr_t object = *reinterpret_cast<uintptr_t*>(list + 48 + 24ull * i);
         if (object <= 0xFFFF) continue;
-        if (*reinterpret_cast<int*>(object + 0x20C) <= 0) continue; // hp
+        if (*reinterpret_cast<int*>(object + 0x20C) <= 0) continue;
         const uintptr_t status = *reinterpret_cast<uintptr_t*>(object + 0x18);
         if (status <= 0xFFFF || *reinterpret_cast<uint8_t*>(status + 1745) == 0) continue;
-        enemies.push_back({ *reinterpret_cast<float*>(object + 0x3C),
-                            *reinterpret_cast<float*>(object + 0x40) });
+        enemies.push_back({*reinterpret_cast<float*>(object + 0x3C),
+                           *reinterpret_cast<float*>(object + 0x40)});
     }
     return enemies;
 }
@@ -266,9 +265,7 @@ float EnemyClearance(Vec2 p, const std::vector<Vec2>& enemies) {
     return best;
 }
 
-// sub_1800C9CA0 truncates a projectile's threat path at the first solid wall it
-// enters (tile types 4/5/34), so we stop dodging shots a wall already blocks. A
-// projectile flagged pass-through (its own props+369) ignores walls except type 5.
+
 bool ProjectileBlockedByWall(Vec2 p, bool passThrough) {
     TileInfo tile;
     if (!QueryTile(p, tile) || !tile.blocked)
@@ -280,10 +277,9 @@ bool ProjectileBlockedByWall(Vec2 p, bool passThrough) {
 
 bool ProjectilePosition(uintptr_t projectile, float futureMs, Vec2& out) {
     auto fn = reinterpret_cast<ProjectilePositionFn>(ga::Rva(kProjectilePositionRva));
-    if (!fn) return false;
-    // The native positionAtTime writes its out-params through r8/r9. The
-    // original gives r8 a 12-byte buffer (_DWORD[3]) and r9 a 4-byte int; a
-    // 4-byte r8 here overflows the stack. Match the original's buffer sizes.
+    if (!fn || projectile <= 0xFFFF) return false;
+
+
     float scratch[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     int scratchInt[2] = {0, 0};
     const uint64_t packed = fn(projectile, futureMs, scratch, scratchInt);
@@ -296,7 +292,9 @@ void GatherThreats(std::vector<Threat>& threats, int gameTime) {
     threats.clear();
     const uintptr_t root = game::Root();
     const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
-    const uintptr_t manager = world ? *reinterpret_cast<uintptr_t*>(world + 184) : 0;
+    const uintptr_t manager = world
+        ? *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_PROJECTILE_MANAGER)
+        : 0;
     const uintptr_t list = manager ? *reinterpret_cast<uintptr_t*>(manager + 24) : 0;
     if (!list) return;
 
@@ -319,27 +317,27 @@ void GatherThreats(std::vector<Threat>& threats, int gameTime) {
         threat.minX = threat.minY = std::numeric_limits<float>::infinity();
         threat.maxX = threat.maxY = -std::numeric_limits<float>::infinity();
         const uintptr_t klass = *reinterpret_cast<uintptr_t*>(projectile + 24);
-        threat.objectType = klass > 0xFFFF ? *reinterpret_cast<int*>(klass + 1700) : 0;
+        threat.objectType = klass > 0xFFFF
+            ? *reinterpret_cast<int*>(klass + 1700)
+            : 0;
 
         const bool isAoe = threat.objectType == kAoeObjectType;
         if (isAoe) {
             if (!g_cfg.dodgeAoeBombs)
-                continue;                          // AoE dodging off -> ignore bombs
-            threat.lifetimeMs += kAoeLifetimeBonusMs; // model the full blast window
+                continue;
+            threat.lifetimeMs += kAoeLifetimeBonusMs;
         }
 
         if (!std::isfinite(threat.lifetimeMs) || threat.lifetimeMs <= 0.0f ||
             threat.lifetimeMs > 125000.0f || threat.startTime <= 0 ||
             !threat.visible)
             continue;
-        // AoE never expires on the timer; live shots drop once past their lifetime.
+
         if (!isAoe &&
             static_cast<float>(gameTime) > threat.startTime + threat.lifetimeMs)
             continue;
 
-        // Pass-through-walls flag (proj+280 -> +369). Read only after the validity
-        // gates above, and only through a sane pointer - during a map enter/exit the
-        // projectile record can be half-built and proj+280 garbage.
+
         const uintptr_t pprops = *reinterpret_cast<uintptr_t*>(projectile + 280);
         const bool passThrough =
             pprops > 0xFFFF && *reinterpret_cast<uint8_t*>(pprops + 369) != 0;
@@ -354,7 +352,7 @@ void GatherThreats(std::vector<Threat>& threats, int gameTime) {
             const float future = static_cast<float>(i) * interval;
             if (!ProjectilePosition(projectile, future, position)) break;
             if (ProjectileBlockedByWall(position, passThrough)) {
-                truncated = true;  // path stops at the wall; don't add the endpoint
+                truncated = true;
                 break;
             }
             threat.path.push_back({position, static_cast<int>(future)});
@@ -461,8 +459,7 @@ bool PositionSafe(Vec2 position, int gameTime, const std::vector<Threat>& threat
     return safe;
 }
 
-// One ring (sub_1800D2E40): all directional candidates plus the smoothing-best
-// (centre of the widest safe arc via the +-3 angular window sum).
+
 struct Ring {
     std::vector<Candidate> candidates;
     Candidate best{};
@@ -488,7 +485,7 @@ Ring BuildRing(Vec2 center, float scale, float density, int gameTime,
         if (candidate.legal)
             PositionSafe(candidate.position, gameTime, threats, candidate.safeForMs);
         else
-            candidate.safeForMs = 0; // blocked rays count as zero safe time
+            candidate.safeForMs = 0;
         ring.candidates.push_back(candidate);
     }
 
@@ -507,10 +504,7 @@ Ring BuildRing(Vec2 center, float scale, float density, int gameTime,
     return ring;
 }
 
-// DB_DodgeCore: ring0 (x0.5, dense), ring1..3 (x1/1.5/2). Pick the outer band
-// (among 1..3) with the largest smoothed safe time as the attractor direction,
-// then commit the candidate from the INNERMOST band (ring0) that best trades off
-// closeness to that attractor against safe time.
+
 Candidate ChooseCandidate(Vec2 center, int gameTime,
                           const std::vector<Threat>& threats,
                           const std::vector<Vec2>& enemies) {
@@ -540,10 +534,7 @@ Candidate ChooseCandidate(Vec2 center, int gameTime,
         }
     }
 
-    // Keep-distance pass: among ring0 candidates that are at LEAST as
-    // projectile-safe as the pick, prefer the one furthest from enemies. This
-    // never trades away projectile safety - it only breaks ties toward open
-    // space, so the dodge naturally drifts away from units.
+
     if (!enemies.empty()) {
         float bestClearance = EnemyClearance(best.position, enemies);
         for (const Candidate& candidate : rings[0].candidates) {
@@ -565,15 +556,12 @@ float MoveSpeed(uintptr_t player) {
     return std::isfinite(speed) && speed > 0.0f ? speed : 0.001f;
 }
 
-// Faithful port of the dodge core sub_1800D3270. It edits the immediate move
-// target in place; the return-anchor / manual-steer pacing lives in the caller
-// sub_18002A0C0 and is intentionally not reproduced here (it is Sleep-based and
-// only governs idle auto-dodge re-centering, not the dodge decision itself).
+
 int64_t __fastcall HookMoveUpdate(uintptr_t player, float targetX, float targetY) {
-    // Auto-noclip detection: the requested destination ({targetX, -targetY}) is
-    // the pre-collision tile the player is trying to step onto - the only place
-    // a wall being walked into is visible. Runs regardless of the dodge toggle.
+
+
     noclip::NoteMoveTarget(targetX, -targetY);
+
 
     if (!g_cfg.dodgeProjectiles || !player)
         return g_originalMoveUpdate ? g_originalMoveUpdate(player, targetX, targetY) : 0;
@@ -589,19 +577,14 @@ int64_t __fastcall HookMoveUpdate(uintptr_t player, float targetX, float targetY
         ? std::clamp(gameTime - previousGameTime, 1, 100)
         : 1;
     previousGameTime = gameTime;
-    const Vec2 current{
-        *reinterpret_cast<float*>(player + 0x3C),
-        *reinterpret_cast<float*>(player + 0x40),
-    };
-    const Vec2 requested{targetX, -targetY}; // the move hook's second axis is inverted
+    const Vec2 current{*reinterpret_cast<float*>(player + 0x3C),
+                       *reinterpret_cast<float*>(player + 0x40)};
+    const Vec2 requested{targetX, -targetY};
 
     std::vector<Threat> threats;
     GatherThreats(threats, gameTime);
 
-    // Keep-distance: a cell inside the enemy buffer counts as "not safe" so the
-    // same escape machinery that dodges projectiles also walks us out of melee
-    // range. Empty enemy list (slider 0) makes every InBuffer() false, so the
-    // logic below collapses to the untouched projectile dodge.
+
     const std::vector<Vec2> enemies = GatherEnemies();
     const float keep = g_cfg.dodgeKeepDistance;
     auto InBuffer = [&](Vec2 p) {
@@ -610,8 +593,7 @@ int64_t __fastcall HookMoveUpdate(uintptr_t player, float targetX, float targetY
     };
     const bool currentInBuffer = InBuffer(current);
 
-    // Danger gates (sub_1800D2AC0): time-to-hit for the current cell and for the
-    // requested destination.
+
     unsigned currentSafeFor = kNoThreatTime;
     const bool currentSafe =
         PositionSafe(current, gameTime, threats, currentSafeFor) && !currentInBuffer;
@@ -619,17 +601,15 @@ int64_t __fastcall HookMoveUpdate(uintptr_t player, float targetX, float targetY
     const bool requestedSafe =
         PositionSafe(requested, gameTime, threats, requestedSafeFor) && !InBuffer(requested);
 
-    // Requested destination is safe -> let the move through untouched.
+
     if (requestedSafe)
         return g_originalMoveUpdate ? g_originalMoveUpdate(player, targetX, targetY) : 0;
 
     const float speed = MoveSpeed(player);
 
     if (currentSafe) {
-        // Current cell is safe but the requested one is not: cancel the move if
-        // it would step into the enemy buffer, or if the requested cell gets hit
-        // before the player could cross half a hitbox; otherwise allow it (the
-        // move only grazes the danger).
+
+
         Vec2 output = requested;
         if (InBuffer(requested) ||
             g_cfg.dodgeHitboxSize / speed > static_cast<float>(requestedSafeFor))
@@ -637,7 +617,7 @@ int64_t __fastcall HookMoveUpdate(uintptr_t player, float targetX, float targetY
         return g_originalMoveUpdate ? g_originalMoveUpdate(player, output.x, -output.y) : 0;
     }
 
-    // Current cell is unsafe -> ring-sample an escape and step toward it.
+
     const Candidate chosen = ChooseCandidate(current, gameTime, threats, enemies);
     Vec2 output = requested;
     if (chosen.position.x != 0.0f || chosen.position.y != 0.0f) {
@@ -656,28 +636,22 @@ int64_t __fastcall HookMoveUpdate(uintptr_t player, float targetX, float targetY
     return g_originalMoveUpdate ? g_originalMoveUpdate(player, output.x, -output.y) : 0;
 }
 
-using PlayerUpdateFn = char(__fastcall*)(void*, int32_t, int32_t, void*);
+using PlayerUpdateFn = char(__fastcall*)(uintptr_t, int32_t, int32_t, void*);
 PlayerUpdateFn g_originalPlayerUpdate = nullptr;
 
-char __fastcall HookPlayerUpdate(void* self, int32_t now, int32_t delta, void* method) {
-    static bool once = false;
-    if (!once) {
-        once = true;
-        DBLOG("HookPlayerUpdate: first call self=%p", self);
-    }
-
-    if (self) {
-        const uintptr_t props = *reinterpret_cast<uintptr_t*>(
-            reinterpret_cast<uintptr_t>(self) + 0x18);
-        if (props > 0xFFFF)
-            *reinterpret_cast<float*>(props + 0x788) = 0.0f;
+char __fastcall HookPlayerUpdate(uintptr_t player, int32_t now, int32_t delta,
+                                 void* method) {
+    if (player) {
+        const uintptr_t status = *reinterpret_cast<uintptr_t*>(player + 0x18);
+        if (status > 0xFFFF)
+            *reinterpret_cast<float*>(status + kMovementPushOffset) = 0.0f;
     }
     return g_originalPlayerUpdate
-        ? g_originalPlayerUpdate(self, now, delta, method)
+        ? g_originalPlayerUpdate(player, now, delta, method)
         : 0;
 }
 
-} // namespace
+}
 
 void Install() {
     void* target = ga::Rva(kMoveUpdateRva);
@@ -689,19 +663,21 @@ void Install() {
         DBLOG("dodge::Install: MH_CreateHook=%d orig=%p", (int)st, (void*)g_originalMoveUpdate);
     }
 
-    void* puTarget = ga::Rva(kPlayerUpdateRva);
-    DBLOG("dodge::Install: player-update target=%p (GA+0x%llX)", puTarget,
+    void* playerUpdate = ga::Rva(kPlayerUpdateRva);
+    DBLOG("dodge::Install: player-update target=%p (GA+0x%llX)", playerUpdate,
           (unsigned long long)kPlayerUpdateRva);
-    if (puTarget) {
-        MH_STATUS st = MH_CreateHook(puTarget, reinterpret_cast<void*>(&HookPlayerUpdate),
-                      reinterpret_cast<void**>(&g_originalPlayerUpdate));
+    if (playerUpdate) {
+        const MH_STATUS st = MH_CreateHook(
+            playerUpdate, reinterpret_cast<void*>(&HookPlayerUpdate),
+            reinterpret_cast<void**>(&g_originalPlayerUpdate));
         DBLOG("dodge::Install: player-update MH_CreateHook=%d orig=%p",
               (int)st, (void*)g_originalPlayerUpdate);
     }
+
 }
 
 void Tick() {
-    // The dodge decision is stateless per move-hook call; nothing to tick.
+
 }
 
-} // namespace dodge
+}

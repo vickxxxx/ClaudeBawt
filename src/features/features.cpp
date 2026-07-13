@@ -6,11 +6,11 @@
 namespace features {
     void InstallAll() {
         DBLOG("InstallAll: MH_Initialize");
-        MH_Initialize();   // feature detours (move fn, speed getter, ...) use MinHook
+        MH_Initialize();
         DBLOG("InstallAll: InstallRootCapture");
-        game::InstallRootCapture();  // captures qword_1801B2E10 (needed by aim/etc.)
+        game::InstallRootCapture();
         DBLOG("InstallAll: InstallGameTick");
-        game::InstallGameTick();     // per-frame game-thread hook (nexus / noclip auto)
+        game::InstallGameTick();
         DBLOG("InstallAll: aim::Install");
         aim::Install();
         DBLOG("InstallAll: dodge::Install");
@@ -40,8 +40,8 @@ namespace features {
         DBLOG("InstallAll: MH_EnableHook returned %d", (int)st);
     }
     void Tick() {
-        // First-frame breadcrumbs: the first Tick that crashes leaves the last
-        // log line naming the feature. Subsequent frames stay quiet.
+
+
         static bool firstTick = true;
         if (firstTick) DBLOG("Tick#1: aim");
         aim::Tick();
@@ -80,8 +80,7 @@ namespace features {
         if (firstTick) { DBLOG("Tick#1: complete"); firstTick = false; }
     }
 
-    // Runs on the game thread (from the GA+WORLD_UPDATE_FN detour). il2cpp
-    // managed calls are only safe here, not on the render/Present thread.
+
     void GameTick() {
         nexus::Poll();
         noclip::Poll();

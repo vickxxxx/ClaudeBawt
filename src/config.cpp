@@ -15,8 +15,7 @@ namespace {
     void BuildPath() {
         if (s_path[0]) return;
 
-        // Original: SHGetFolderPathA(nullptr, CSIDL_PERSONAL, ..., path), then
-        // append "\\rotmgv2.cf" (sub_180008890 @ 0x1800088e9..0x180008aff).
+
         if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_PERSONAL, nullptr,
                                       SHGFP_TYPE_CURRENT, s_path))) {
             std::strncat(s_path, "\\rotmgv2.cf", MAX_PATH - std::strlen(s_path) - 1);
@@ -30,13 +29,13 @@ namespace {
     }
 
     int ReadInt(const char* key, int value) {
-        return GetPrivateProfileIntA("DogeBawt", key, value, Config_Path());
+        return GetPrivateProfileIntA("Client", key, value, Config_Path());
     }
 
     float ReadFloat(const char* key, float value) {
         char fallback[32], text[64];
         std::snprintf(fallback, sizeof(fallback), "%.9g", value);
-        GetPrivateProfileStringA("DogeBawt", key, fallback, text, sizeof(text), Config_Path());
+        GetPrivateProfileStringA("Client", key, fallback, text, sizeof(text), Config_Path());
         char* end = nullptr;
         const float parsed = std::strtof(text, &end);
         return (end && end != text) ? parsed : value;
@@ -45,13 +44,13 @@ namespace {
     void WriteInt(const char* key, int value) {
         char text[32];
         std::snprintf(text, sizeof(text), "%d", value);
-        WritePrivateProfileStringA("DogeBawt", key, text, Config_Path());
+        WritePrivateProfileStringA("Client", key, text, Config_Path());
     }
 
     void WriteFloat(const char* key, float value) {
         char text[32];
         std::snprintf(text, sizeof(text), "%.9g", value);
-        WritePrivateProfileStringA("DogeBawt", key, text, Config_Path());
+        WritePrivateProfileStringA("Client", key, text, Config_Path());
     }
 
     void ReadString(const char* key, char* value, size_t capacity) {
@@ -59,13 +58,13 @@ namespace {
             return;
         char fallback[256]{};
         std::strncpy(fallback, value, sizeof(fallback) - 1);
-        GetPrivateProfileStringA("DogeBawt", key, fallback, value,
+        GetPrivateProfileStringA("Client", key, fallback, value,
                                  static_cast<DWORD>(capacity), Config_Path());
         value[capacity - 1] = '\0';
     }
 
     void WriteString(const char* key, const char* value) {
-        WritePrivateProfileStringA("DogeBawt", key, value ? value : "",
+        WritePrivateProfileStringA("Client", key, value ? value : "",
                                    Config_Path());
     }
 
@@ -179,7 +178,7 @@ void Config_Load() {
 
 void Config_Save() {
     BuildPath();
-    WritePrivateProfileStringA("DogeBawt", nullptr, nullptr, s_path);
+    WritePrivateProfileStringA("Client", nullptr, nullptr, s_path);
 
     SAVE_INT(menuToggleHotkey); SAVE_INT(menuTheme);
     SAVE_BOOL(menuBackground); SAVE_BOOL(titleBarActive); SAVE_BOOL(sideBarBackground);

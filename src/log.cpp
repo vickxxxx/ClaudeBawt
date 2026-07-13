@@ -17,28 +17,28 @@ void OpenLocked() {
         return;
     g_tried = true;
 
-    // Prefer the temp directory (always writable for the game's user).
+
     char dir[MAX_PATH] = {0};
     DWORD n = GetTempPathA(MAX_PATH, dir);
     if (n == 0 || n > MAX_PATH)
         lstrcpyA(dir, "C:\\");
-    wsprintfA(g_path, "%sdogebawt.log", dir);
+    wsprintfA(g_path, "%sclient.log", dir);
 
     g_file = CreateFileA(g_path, FILE_APPEND_DATA, FILE_SHARE_READ, nullptr,
                          OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 
     char banner[MAX_PATH + 64];
-    wsprintfA(banner, "[dogebawt] log file: %s\n", g_path);
+    wsprintfA(banner, "[client] log file: %s\n", g_path);
     OutputDebugStringA(banner);
 }
 
-} // namespace
+}
 
 void Init() {
     AcquireSRWLockExclusive(&g_lock);
     OpenLocked();
     ReleaseSRWLockExclusive(&g_lock);
-    Write("===== dogebawt log opened (pid %lu) =====", GetCurrentProcessId());
+    Write("===== client log opened (pid %lu) =====", GetCurrentProcessId());
 }
 
 void Shutdown() {
@@ -73,9 +73,9 @@ void Write(const char* fmt, ...) {
     if (g_file != INVALID_HANDLE_VALUE) {
         DWORD written = 0;
         WriteFile(g_file, line, (DWORD)len, &written, nullptr);
-        FlushFileBuffers(g_file); // breadcrumb must survive a crash on the next line
+        FlushFileBuffers(g_file);
     }
     ReleaseSRWLockExclusive(&g_lock);
 }
 
-} // namespace dlog
+}

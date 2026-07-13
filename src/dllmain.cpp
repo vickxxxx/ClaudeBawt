@@ -1,5 +1,5 @@
-// dllmain.cpp - injection entry. Spawns a worker that waits for GameAssembly,
-// installs the DX11 + feature hooks, then idles until unload.
+
+
 #include <windows.h>
 #include <atomic>
 
@@ -13,7 +13,7 @@ static std::atomic<bool> g_stopping{false};
 
 static DWORD WINAPI Worker(LPVOID) {
     DBLOG("Worker: start, waiting for GameAssembly.dll");
-    // Wait for the il2cpp game image to be present before touching it.
+
     while (!g_stopping.load(std::memory_order_acquire) && !ga::Init())
         Sleep(50);
     if (g_stopping.load(std::memory_order_acquire))
@@ -24,8 +24,7 @@ static DWORD WINAPI Worker(LPVOID) {
     Config_Load();
     DBLOG("Worker: Config_Load() done");
 
-    // The original installs GameAssembly hooks lazily from Present. This
-    // worker only establishes the process-global Present vtable hook.
+
     DBLOG("Worker: hooks::Install()");
     while (!g_stopping.load(std::memory_order_acquire) && !hooks::Install())
         Sleep(250);
@@ -34,7 +33,7 @@ static DWORD WINAPI Worker(LPVOID) {
     return 0;
 }
 
-extern "C" __declspec(dllexport) void DogeBawt_Shutdown() {
+extern "C" __declspec(dllexport) void Client_Shutdown() {
     g_stopping.store(true, std::memory_order_release);
     hooks::Uninstall();
     ga::Reset();
@@ -51,9 +50,8 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
             CloseHandle(worker);
     } else if (reason == DLL_PROCESS_DETACH) {
         g_stopping.store(true, std::memory_order_release);
-        // Process termination tears down D3D/Win32 itself. For explicit
-        // FreeLibrary, callers must invoke DogeBawt_Shutdown first so cleanup
-        // runs outside the loader lock.
+
+
         if (reserved)
             game::ResetRuntimeState();
     }

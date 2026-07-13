@@ -29,7 +29,7 @@ namespace hooks {
     static HRESULT __stdcall hkPresent(IDXGISwapChain* swap, UINT sync, UINT flags);
 
     static LRESULT __stdcall hkWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-        // Menu toggle (edge-triggered), works regardless of game input focus.
+
         if (msg == WM_KEYDOWN && (int)wParam == g_cfg.menuToggleHotkey)
             menu::Toggle();
 
@@ -52,8 +52,8 @@ namespace hooks {
         auto original = oPresent;
 
         if (!s_unloading.load(std::memory_order_acquire)) {
-            // DB_PresentHook retries DB_InstallHooks before initializing its
-            // renderer. Keep the same ordering and only publish success once.
+
+
             if (!s_featuresInstalled.load(std::memory_order_acquire) && ga::Init()) {
                 DBLOG("hkPresent: first frame, features::InstallAll()");
                 features::InstallAll();
@@ -117,8 +117,7 @@ namespace hooks {
             return false;
         }
 
-        // The DXGI vtable is process-global: patching this slot redirects the
-        // game's swapchain Present too.
+
         s_presentSlot = &(*reinterpret_cast<void***>(swap))[8];
         oPresent = reinterpret_cast<HRESULT(__stdcall*)(IDXGISwapChain*, UINT, UINT)>(*s_presentSlot);
         DBLOG("hooks::Install: Present slot=%p orig=%p, patching vtable", (void*)s_presentSlot, (void*)oPresent);
@@ -169,13 +168,11 @@ namespace hooks {
         }
         ReleaseSRWLockExclusive(&s_stateLock);
 
-        // Explicit shutdown is expected to run before FreeLibrary, outside
-        // DllMain's loader lock. Let any Present already inside our code leave.
+
         for (unsigned i = 0; i != 2000 && s_presentCalls.load(std::memory_order_acquire) != 0; ++i)
             Sleep(1);
 
-        // All GameAssembly detours are created through the same MinHook
-        // instance. Raw feature patches need their own cross-slice rollback.
+
         MH_DisableHook(MH_ALL_HOOKS);
         MH_Uninitialize();
 

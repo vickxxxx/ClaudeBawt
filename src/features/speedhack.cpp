@@ -1,10 +1,6 @@
-// speedhack.cpp - wall-clock scaling used by the original client.
-//
-// DB_PresentHook selects speed 1/2 and publishes it as a double.  The three
-// detours at sub_1800E0730/770/810 return rebased GetTickCount,
-// GetTickCount64 and QueryPerformanceCounter values whose elapsed portion is
-// multiplied by that speed.  Rebasing on every setting change is important:
-// it keeps all three clocks continuous.
+
+
+
 #include "features.h"
 #include "config.h"
 #include "il2cpp.h"
@@ -127,35 +123,29 @@ bool KeyDown(int vk) {
     return vk > 0 && (GetAsyncKeyState(vk) & 0x8000) != 0;
 }
 
-} // namespace
+}
 
 float CurrentSpeed() {
     return static_cast<float>(Sanitize(g_cfg.useSpeed1 ? g_cfg.speedhackSpeed1
                                                        : g_cfg.speedhackSpeed2));
 }
 
-// Neuter the game's time-tamper / anti-speedhack check at GA+0x31F310. The
-// original (DB_PresentHook) patches its `push rbx` prologue (40 53) to `ret;nop`
-// (C3 90) and only enables the clock scaling once this is done - without it the
-// check fires and the server kicks you. Only patch a genuine 40 53 prologue.
-// Returns true if the anti-check is (now) neutralized and the clock scaling is
-// safe to install - matching DB_PresentHook, which only enables the speedhack
-// when the patch applies or the site is already neutralized.
+
 bool NeuterAntiSpeedCheck() {
-    constexpr uintptr_t kRva = 0x31F310;
+    constexpr uintptr_t kRva = 0x31E310;
     uint8_t* site = static_cast<uint8_t*>(ga::Rva(kRva));
     if (!site) {
         DBLOG("speedhack: anti-check site null (GA not ready?)");
         return false;
     }
-    if (site[0] == 0x40 && site[1] == 0x53) {            // push rbx prologue
-        const uint8_t patch[2] = { 0xC3, 0x90 };         // ret ; nop
+    if (site[0] == 0x40 && site[1] == 0x53) {
+        const uint8_t patch[2] = { 0xC3, 0x90 };
         util::Patch(site, patch, sizeof(patch));
         DBLOG("speedhack: neutered anti-speed check at GA+0x%llX (40 53 -> C3 90)",
               (unsigned long long)kRva);
         return true;
     }
-    if (site[0] == 0xC3 || site[0] == 0xE9) {            // already ret/jmp-hooked
+    if (site[0] == 0xC3 || site[0] == 0xE9) {
         DBLOG("speedhack: anti-check at GA+0x%llX already neutralized (%02X)",
               (unsigned long long)kRva, (int)site[0]);
         return true;
@@ -167,8 +157,8 @@ bool NeuterAntiSpeedCheck() {
 }
 
 void Install() {
-    // Don't scale the clocks unless the anti-speed check is neutralized, exactly
-    // like DB_PresentHook gates its clock hooks behind the patch.
+
+
     if (!NeuterAntiSpeedCheck())
         return;
 
@@ -197,10 +187,8 @@ void Install() {
 }
 
 void Tick() {
-    // Selection is the "Use Speed 1 (Unticked Uses Speed 2)" checkbox
-    // (g_cfg.useSpeed1 == the original unk_1801B31CD). The toggle hotkey flips
-    // that same state, matching DB_RenderMenu + the "Toggle 1 <> 2" key. Scaling
-    // is always active; set Speed 1 = 1.0 for normal speed.
+
+
     int vk = g_cfg.speedToggleKey ? g_cfg.speedToggleKey : g_cfg.speedHackHotkey;
     bool down = KeyDown(vk);
     if (down && !g_hotkeyHeld)
@@ -215,4 +203,4 @@ void Tick() {
     ReleaseSRWLockExclusive(&g_clockLock);
 }
 
-} // namespace speedhack
+}

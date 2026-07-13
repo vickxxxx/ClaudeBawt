@@ -1,11 +1,6 @@
-// Safety-path visualization.
-//
-// The analyzed DogeBawt binary contains the "Render Safety Path" setting only
-// in its menu; no runtime xref or original drawing routine exists.  This
-// evidence-grounded replacement visualizes the recovered dodge primitives:
-// live projectile trajectories, the innermost candidate ring from
-// sub_1800D2E40, and the candidate selected with the recovered
-// 61/distance + safeMilliseconds*0.02 score.
+
+
+
 #include "render_safety.h"
 
 #include "config.h"
@@ -55,7 +50,7 @@ struct Candidate {
     bool legal;
 };
 
-constexpr uintptr_t kProjectilePositionRva = 0x7282F0;
+constexpr uintptr_t kProjectilePositionRva = 0x63CBA0;
 constexpr unsigned kNoThreatTime = 40000;
 constexpr float kTwoPi = 6.2831855f;
 constexpr float kCandidatePadding = 0.06f;
@@ -113,9 +108,12 @@ bool TileBlocked(Vec2 point) {
     const uintptr_t root = game::Root();
     const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 0x28) : 0;
     if (!world) return true;
-    const uintptr_t squares = *reinterpret_cast<uintptr_t*>(world + 0x58);
-    const int width = *reinterpret_cast<int*>(world + 0xFC);
-    const int height = *reinterpret_cast<int*>(world + 0x100);
+    const uintptr_t squares =
+        *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_TILE_GRID);
+    const int width =
+        *reinterpret_cast<int*>(world + ga::off::WORLD_MAP_WIDTH);
+    const int height =
+        *reinterpret_cast<int*>(world + ga::off::WORLD_MAP_HEIGHT);
     const int x = static_cast<int>(point.x);
     const int y = static_cast<int>(point.y);
     if (!squares || x < 0 || y < 0 || x >= width || y >= height) return true;
@@ -162,7 +160,9 @@ bool SegmentBlocked(Vec2 from, Vec2 to) {
 void GatherThreats(std::vector<Threat>& threats, int gameTime) {
     const uintptr_t root = game::Root();
     const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 0x28) : 0;
-    const uintptr_t manager = world ? *reinterpret_cast<uintptr_t*>(world + 0xB8) : 0;
+    const uintptr_t manager = world
+        ? *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_PROJECTILE_MANAGER)
+        : 0;
     const uintptr_t list = manager ? *reinterpret_cast<uintptr_t*>(manager + 0x18) : 0;
     if (!list) return;
     const uint32_t count = *reinterpret_cast<uint32_t*>(list + 0x18);
@@ -335,7 +335,7 @@ Candidate Choose(Vec2 center, int gameTime, const std::vector<Threat>& threats,
     return best;
 }
 
-} // namespace
+}
 
 void Tick() {
     if (!g_cfg.renderSafetyPath) return;
@@ -346,9 +346,9 @@ void Tick() {
 
     Matrix matrix{};
     if (!Camera(matrix)) return;
-    const Vec2 center{*reinterpret_cast<float*>(player + ga::off::OBJ_X),
-                      *reinterpret_cast<float*>(player + ga::off::OBJ_Y)};
-    const int gameTime = *reinterpret_cast<int*>(world + 0x80);
+    const Vec2 center{*reinterpret_cast<float*>(player + ga::off::OBJECT_X),
+                      *reinterpret_cast<float*>(player + ga::off::OBJECT_Y)};
+    const int gameTime = *reinterpret_cast<int*>(world + ga::off::WORLD_GAME_TIME);
     std::vector<Threat> threats;
     GatherThreats(threats, gameTime);
     std::vector<Candidate> inner;
@@ -379,4 +379,4 @@ void Tick() {
     }
 }
 
-} // namespace render_safety
+}

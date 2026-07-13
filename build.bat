@@ -1,12 +1,6 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-rem ===========================================================================
-rem  DogeBawt remake build  -  produces dist\dogebawt.dll
-rem  Byte-faithful C++ reimplementation of the KevAquila ROTMG DX11Hook cheat.
-rem  Toolchain mirrors realmsense\build.bat (MSVC cl/link).
-rem ===========================================================================
-
 set "config=%~1"
 if "%config%"=="" set "config=Release"
 
@@ -35,8 +29,13 @@ exit /b 1
 if not exist "%out%" mkdir "%out%"
 if not exist "%obj%" mkdir "%obj%"
 
-set "flags=/nologo /W4 /WX- /MP /O2 /MD /DNDEBUG /DWIN32 /D_WINDOWS /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /D_WIN32_WINNT=0x0A00"
-if /i "%config%"=="Debug" set "flags=/nologo /W4 /WX- /MP /Od /Zi /MDd /DDEBUG /DWIN32 /D_WINDOWS /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /D_WIN32_WINNT=0x0A00"
+
+set "flags=/nologo /W4 /WX- /MP /O2 /Ob3 /Oi /Ot /GL /Gy /GF /arch:AVX2 /MD /DNDEBUG /DWIN32 /D_WINDOWS /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /D_WIN32_WINNT=0x0A00"
+set "linkflags=/LTCG /OPT:REF /OPT:ICF /INCREMENTAL:NO /RELEASE /PDB:client.pdb"
+if /i "%config%"=="Debug" (
+    set "flags=/nologo /W4 /WX- /MP /Od /Zi /MDd /DDEBUG /DWIN32 /D_WINDOWS /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /D_WIN32_WINNT=0x0A00"
+    set "linkflags=/DEBUG /PDB:client.pdb /INCREMENTAL:NO"
+)
 
 set "inc=/I"%src%" /I"%imgui%" /I"%imgui%\backends" /I"%minhook%\include" /I"%minhook%\src""
 
@@ -53,11 +52,11 @@ cl %flags% /std:c11 %inc% /c %c_sources% /Fo:"%obj%\\"
 if errorlevel 1 ( popd & exit /b 1 )
 cl %flags% /EHsc /std:c++17 %inc% /c %cpp_sources% /Fo:"%obj%\\"
 if errorlevel 1 ( popd & exit /b 1 )
-link /nologo /DLL /OUT:dogebawt.dll /PDB:dogebawt.pdb "%obj%\*.obj" kernel32.lib user32.lib gdi32.lib shell32.lib shcore.lib d3d11.lib dxgi.lib winhttp.lib crypt32.lib windowscodecs.lib ole32.lib /MACHINE:X64
+link /nologo /DLL /OUT:client.dll %linkflags% "%obj%\*.obj" kernel32.lib user32.lib gdi32.lib shell32.lib shcore.lib d3d11.lib dxgi.lib winhttp.lib crypt32.lib windowscodecs.lib ole32.lib /MACHINE:X64
 set "result=%errorlevel%"
 popd
 
 if not "%result%"=="0" exit /b %result%
 if not exist "%out%\font" mkdir "%out%\font"
 copy /Y "%root%vendor\font\PixelOperator-Bold.ttf" "%out%\font\PixelOperator-Bold.ttf" >nul
-echo [build] %out%\dogebawt.dll
+echo [build] %out%\client.dll

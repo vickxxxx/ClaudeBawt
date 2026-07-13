@@ -1,9 +1,6 @@
-// nexus.cpp - latched health watcher and nexus request.
-//
-// The original watcher (sub_180087490) clamps percent to [0, 99.99], compares
-// hp/maxHp, emits one request, and does not re-arm until health recovers or the
-// player enters one of the safe-area names.  This port preserves the one-shot
-// latch and calls the same GameAssembly nexus routine used by sub_1800856F0.
+
+
+
 #include "features.h"
 #include "config.h"
 #include "il2cpp.h"
@@ -18,7 +15,7 @@
 namespace nexus {
 namespace {
 
-constexpr uintptr_t kNexusRva = 0x1C9F700;
+constexpr uintptr_t kNexusRva = 0x1E98CA0;
 using NexusFn = int64_t (__fastcall*)(uintptr_t);
 
 bool g_armed = true;
@@ -44,7 +41,7 @@ void RequestNexus(uintptr_t worldState, int predictedHp, float currentPercent,
     if (!fn)
         return;
 
-    // sub_1800856F0 uses root->[+0x28], not the player at [+0x28]->[+0x48].
+
     fn(worldState);
     g_armed = false;
     if (g_cfg.autoNexusDisplay) {
@@ -64,25 +61,23 @@ void DrawMessage() {
     }
 
     ImGui::SetNextWindowBgAlpha(0.45f);
-    ImGui::Begin("##dogebawt_nexus", nullptr,
+    ImGui::Begin("##client_nexus", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                  ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings);
     ImGui::TextUnformatted(g_message);
     ImGui::End();
 }
 
-} // namespace
+}
 
 void Install() {}
 
-// Render thread (Present hook): draw only. The GA nexus call MUST NOT happen
-// here - calling an il2cpp managed method off the game thread crashes. See Poll.
+
 void Tick() {
     DrawMessage();
 }
 
-// Game thread (GA+WORLD_UPDATE_FN detour, via features::GameTick). This mirrors
-// sub_1800856F0 firing qword_1801B27A0(worldState) on the game thread.
+
 void Poll() {
     if (!g_cfg.autoNexus) {
         g_armed = true;
@@ -101,10 +96,7 @@ void Poll() {
     if (maxHp <= 0)
         return;
 
-    // Two trigger modes, matching sub_180086D40 / sub_180087490:
-    //   percent mode (dword_1801B2CFC): (percent/100) >= hp/maxHp, percent
-    //                                   clamped to [0, 99.99].
-    //   value mode  (else):             hp < min(hpValue, maxHp - 1).
+
     bool low;
     float percent = std::clamp(g_cfg.autoNexusHpPercent, 0.0f, 99.99f);
     int threshold = std::min(static_cast<int>(g_cfg.autoNexusHpValue), maxHp - 1);
@@ -135,4 +127,4 @@ void Poll() {
                      false);
 }
 
-} // namespace nexus
+}

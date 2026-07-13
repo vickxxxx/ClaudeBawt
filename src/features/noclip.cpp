@@ -1,21 +1,6 @@
-// noclip.cpp - "Auto NoClip (walk into walls)".
-//
-// Faithful port of the original's noclip machinery:
-//   * collision detour     sub_180085460  (GA+0xA47AD0, qword_1801B2800)
-//   * engage/patch          DB_PatchGA_A31A1C / DB_InputThread (GA+0xA31F1C)
-//   * disengage watchdog    sub_18002D010
-//   * tile query            DB_TileQuery   (cheat-side sub_1800C9AF0)
-//
-// Mechanism: the game's per-tick move/collision-resolve function (GA+0xA47AD0)
-// is detoured. When the gate (word_1801B3240) is up the original is *not*
-// called, so the player's position is never clamped against walls -> noclip.
-// In addition a 4-byte instruction at GA+0xA31F1C is patched (0x405E0C0F on /
-// 0x415E0C0F off), and the per-frame update (GA+0xDA6FF0) is suppressed while
-// engaged (handled in il2cpp.cpp via GateActive()).
-//
-// "Auto" part: each tick the detour tile-queries the player's current cell;
-// if it's a blocking/damaging tile (byte_1801B3242 in the original) noclip
-// engages, and disengages 250 ms after the player clears the walls.
+
+
+
 #include "features.h"
 #include "config.h"
 #include "il2cpp.h"
@@ -31,51 +16,38 @@
 namespace noclip {
 namespace {
 
-// GA+0xA31F1C dword: engaged value written by DB_PatchGA_A31A1C / DB_InputThread
-// (1079948815). The original restores 0x415E0C0F (1096726031); we capture the
-// live bytes on first engage and restore those, with that as the fallback.
-// GA+0xA31F1C is `movzx ebx, [rsi+0x41]` (0F B6 5E 41). Noclip flips the
-// displacement to +0x40 (0F B6 5E 40) so the collision check reads the wrong
-// (non-solid) flag byte. Values are the exact dwords from DB_PatchGA_A31A1C /
-// sub_18002D010 (verified: 1079948815 / 1096726031). A wrong value here writes a
-// bogus instruction over live code and crashes the game.
-constexpr uint32_t kPatchEngage = 0x405EB60Fu;         // == 1079948815  (read [rsi+0x40])
-constexpr uint32_t kPatchRestoreDefault = 0x415EB60Fu; // == 1096726031  (read [rsi+0x41])
-constexpr ULONGLONG kOffWallGraceMs = 250; // DB_InputThread's 250ms disengage delay
+
+constexpr uint32_t kPatchEngage = 0x405EB60Fu;
+constexpr uint32_t kPatchRestoreDefault = 0x415EB60Fu;
+constexpr ULONGLONG kOffWallGraceMs = 250;
 
 using CollisionFn = void(__fastcall*)(uintptr_t, uint32_t);
 CollisionFn g_orig = nullptr;
 
-// The real noclip: two move-validity predicates the game consults. We force
-// their results while the gate is up, and use the "can move" predicate's raw
-// result as the actual wall detector (matches sub_180087B60 / sub_180087B30).
-constexpr uintptr_t kCanMoveRva = 0x1CB2230; // qword_1801B27B8 (sub_180087B60)
-constexpr uintptr_t kIsSolidRva = 0x1CB0C50; // qword_1801B27D8 (sub_180087B30)
+
+constexpr uintptr_t kCanMoveRva = 0x1EAB6A0;
+constexpr uintptr_t kIsSolidRva = 0x1EAA410;
 using PredFn = int64_t(__fastcall*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
 PredFn g_origCanMove = nullptr;
 PredFn g_origIsSolid = nullptr;
 
-std::atomic<bool> g_gate{false};   // word_1801B3240: block collision + per-frame update
-bool      g_engaged = false;       // patch currently applied
+std::atomic<bool> g_gate{false};
+bool      g_engaged = false;
 uint32_t  g_originalDword = kPatchRestoreDefault;
 bool      g_haveOriginal = false;
-bool      g_onWall = false;        // byte_1801B3242: set by the detour, consumed by Poll
+bool      g_onWall = false;
 ULONGLONG g_offWallSince = 0;
 
-// Diagnostic snapshot of the last tile the player was queried on.
+
 int     g_dbgType = -1;
 uint8_t g_dbgObj1698 = 0;
 uint8_t g_dbgB27 = 0;
 bool    g_dbgB25 = false;
 int     g_dbgDmg = 0;
 bool    g_dbgHadTile = false;
-bool    g_manual = false;  // held engaged by SocketFu (not the auto wall logic)
+bool    g_manual = false;
 
-// ---------------------------------------------------------------------------
-// DB_TileQuery (sub_1800C9AF0) reimplementation - returns whether the cell at
-// world (x, y) is a wall/blocking or damaging tile (the original's tile[27] ||
-// tile[25] test in sub_180085460).
-// ---------------------------------------------------------------------------
+
 bool TileIsWall(float x, float y) {
     if (x < 0.0f || y < 0.0f)
         return false;
@@ -87,33 +59,36 @@ bool TileIsWall(float x, float y) {
     if (!ws)
         return false;
 
-    uintptr_t tiles = *reinterpret_cast<uintptr_t*>(ws + 88);
+    uintptr_t tiles =
+        *reinterpret_cast<uintptr_t*>(ws + ga::off::WORLD_TILE_GRID);
     if (!tiles)
         return false;
 
-    const int height = *reinterpret_cast<int*>(ws + 256); // y-bound / stride
-    const int width  = *reinterpret_cast<int*>(ws + 252); // x-bound
+    const int height =
+        *reinterpret_cast<int*>(ws + ga::off::WORLD_MAP_HEIGHT);
+    const int width =
+        *reinterpret_cast<int*>(ws + ga::off::WORLD_MAP_WIDTH);
     const int ix = static_cast<int>(x);
     const int iy = static_cast<int>(y);
     if (iy >= height || ix >= width)
         return false;
 
-    // tile = *(qword*)(8*(x + height*y) + tiles + 32)
+
     uintptr_t tile = *reinterpret_cast<uintptr_t*>(
         static_cast<uintptr_t>(8 * (ix + height * iy)) + tiles + 32);
     if (!tile)
-        return true; // no tile object -> treated as blocked (result[24]=1)
+        return true;
 
     g_dbgHadTile = true;
     const uintptr_t obj  = *reinterpret_cast<uintptr_t*>(tile + 72);
     const int       type = *reinterpret_cast<int*>(tile + 68);
 
-    bool b25 = false;      // result[25]
-    int  dmg = 0;          // result[28]
-    uint8_t b27 = 0;       // result[27] - tile collision byte
-    uint8_t b34 = 0;       // result[34]
-    uint8_t obj1698 = 0;   // result[24] from occupant (v16[1698])
-    bool haveObj = false;  // v14
+    bool b25 = false;
+    int  dmg = 0;
+    uint8_t b27 = 0;
+    uint8_t b34 = 0;
+    uint8_t obj1698 = 0;
+    bool haveObj = false;
 
     if (obj) {
         uintptr_t inner = *reinterpret_cast<uintptr_t*>(obj + 24);
@@ -130,7 +105,7 @@ bool TileIsWall(float x, float y) {
         dmg = *reinterpret_cast<int*>(props + 268);
     }
 
-    // b25: damaging tile that is type 37 or an occupied non-passable tile.
+
     if (dmg > 0) {
         if (type == 37 || (haveObj && !b34))
             b25 = true;
@@ -139,14 +114,14 @@ bool TileIsWall(float x, float y) {
     g_dbgType = type; g_dbgObj1698 = obj1698; g_dbgB27 = b27;
     g_dbgB25 = b25; g_dbgDmg = dmg;
 
-    // Faithful to sub_180085460: byte_1801B3242 = (result[27] || result[25]).
+
     return (b27 != 0) || b25;
 }
 
 void Engage() {
     if (g_engaged)
         return;
-    void* site = ga::Rva(ga::rva::PATCH_LAGPORT); // GA+0xA31F1C
+    void* site = ga::Rva(ga::rva::MOVEMENT_FLAG_PATCH);
     if (site) {
         if (!g_haveOriginal) {
             std::memcpy(&g_originalDword, site, sizeof(g_originalDword));
@@ -163,7 +138,7 @@ void Engage() {
 void Disengage() {
     if (!g_engaged)
         return;
-    void* site = ga::Rva(ga::rva::PATCH_LAGPORT);
+    void* site = ga::Rva(ga::rva::MOVEMENT_FLAG_PATCH);
     if (site) {
         uint32_t v = g_haveOriginal ? g_originalDword : kPatchRestoreDefault;
         util::Patch(site, &v, sizeof(v));
@@ -174,52 +149,41 @@ void Disengage() {
     DBLOG("noclip: DISENGAGE");
 }
 
-// Collision/move-resolve detour (sub_180085460). Detects whether the player is
-// standing on a wall, and skips the original resolver while the gate is up.
+
 void __fastcall hkCollision(uintptr_t a1, uint32_t a2) {
     static bool once = false;
     if (!once) { once = true; DBLOG("hkCollision: first call"); }
 
-    // Detection is driven by the move target (NoteMoveTarget), not by the
-    // resolved player tile - the player's own cell is always clamped to floor,
-    // so it can never reveal a wall being walked into. Here we only enforce the
-    // gate: when noclip is engaged, skip the original collision resolver so the
-    // player isn't pushed back out of the wall.
+
     if (!g_gate.load(std::memory_order_acquire)) {
         if (g_orig)
             g_orig(a1, a2);
     }
 }
 
-// sub_180087B60: the game's "can move here?" predicate. Its RAW result is the
-// real wall detector (false = blocked); while the gate is up we force it true
-// so the player walks through. Order matters: detect from the raw result first,
-// THEN apply the override (so we keep detecting walls while phasing).
+
 int64_t __fastcall hkCanMove(uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
     static bool once = false;
     if (!once) { once = true; DBLOG("hkCanMove: first call"); }
     const int64_t r = g_origCanMove ? g_origCanMove(a1, a2, a3, a4) : 0;
     if (!(static_cast<uint8_t>(r)) && g_cfg.autoNoClip)
-        g_onWall = true;                                  // blocked move = wall
+        g_onWall = true;
     if (g_gate.load(std::memory_order_acquire))
-        return 1;                                         // phase: force valid
+        return 1;
     return r;
 }
 
-// sub_180087B30: the "is solid?" predicate. While the gate is up force it false
-// (not solid) so the player isn't blocked.
+
 int64_t __fastcall hkIsSolid(uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
     const int64_t r = g_origIsSolid ? g_origIsSolid(a1, a2, a3, a4) : 0;
     if (g_gate.load(std::memory_order_acquire))
-        return 0;                                         // phase: force not solid
+        return 0;
     return r;
 }
 
-} // namespace
+}
 
-// Called from the move hook (HookMoveUpdate) with the player's requested
-// destination - the pre-collision tile they are trying to step onto. This is
-// where a wall actually shows up (the resolved player position never does).
+
 void NoteMoveTarget(float x, float y) {
     if (!g_cfg.autoNoClip)
         return;
@@ -242,8 +206,7 @@ bool GateActive() {
     return g_gate.load(std::memory_order_acquire);
 }
 
-// Manual hold (SocketFu): engage/keep the noclip gate regardless of the auto
-// wall logic. Poll() yields to this so the two don't fight over the gate.
+
 void SetManual(bool on) {
     if (on == g_manual)
         return;
@@ -255,16 +218,16 @@ void SetManual(bool on) {
 }
 
 void Install() {
-    void* target = ga::Rva(ga::rva::COLLISION_FN);
+    void* target = ga::Rva(ga::rva::COLLISION_RESOLVE);
     DBLOG("noclip::Install: collision target=%p (GA+0x%llX)", target,
-          (unsigned long long)ga::rva::COLLISION_FN);
+          (unsigned long long)ga::rva::COLLISION_RESOLVE);
     if (!target)
         return;
     const MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void*>(&hkCollision),
                                        reinterpret_cast<void**>(&g_orig));
     DBLOG("noclip::Install: MH_CreateHook=%d orig=%p", (int)st, (void*)g_orig);
 
-    // The real noclip predicates: "can move" (force true) + "is solid" (force false).
+
     void* canMove = ga::Rva(kCanMoveRva);
     if (canMove) {
         const MH_STATUS s = MH_CreateHook(canMove, reinterpret_cast<void*>(&hkCanMove),
@@ -282,14 +245,12 @@ void Install() {
 }
 
 void Tick() {
-    // No overlay in the original; nothing to draw on the render thread.
+
 }
 
-// Game thread (features::GameTick). Mirrors the auto-noclip arm/disarm block at
-// the tail of DB_InputThread: engage when on a wall, disengage 250ms after
-// clearing. g_onWall is set by the collision detour and reset here each tick.
+
 void Poll() {
-    if (g_manual) {        // SocketFu owns the gate; leave it engaged
+    if (g_manual) {
         g_onWall = false;
         return;
     }
@@ -314,4 +275,4 @@ void Poll() {
     g_onWall = false;
 }
 
-} // namespace noclip
+}

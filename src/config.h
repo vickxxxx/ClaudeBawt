@@ -11,8 +11,8 @@ struct Keybind {
 struct Config {
     enum TargetingStyle { TS_DISTANCE = 0, TS_CURSOR = 1, TS_HEALTH = 2 };
 
-    // Menu / presentation.
-    int   menuToggleHotkey = 0x2D; // VK_INSERT
+
+    int   menuToggleHotkey = 0x2D;
     int   menuTheme = 0;
     bool  menuBackground = true;
     bool  titleBarActive = true;
@@ -23,15 +23,15 @@ struct Config {
     float colorBase[4] = { 0.80f, 0.20f, 0.60f, 1.00f };
     float colorHover[4] = { 1.00f, 0.40f, 0.80f, 1.00f };
     float colorActive[4] = { 1.00f, 0.20f, 0.70f, 1.00f };
-    float colorCheck[4] = { 0.00f, 1.00f, 0.00f, 1.00f }; // dogebawt: green check (xmmword_1801AFBC8)
+    float colorCheck[4] = { 0.00f, 1.00f, 0.00f, 1.00f };
     float colorText[4] = { 1.00f, 1.00f, 1.00f, 1.00f };
 
-    // Mods.
-    bool  useSpeed1 = true;        // unk_1801B31CD default = 1 (use speed 1)
+
+    bool  useSpeed1 = true;
     bool  showCurrentSpeed = false;
     int   speedHackHotkey = 0;
-    float speedhackSpeed1 = 1.1f;  // DB_InitDefaults dword_1801B2D20 = 1.1
-    float speedhackSpeed2 = 2.0f;  // DB_InitDefaults dword_1801B2D24 = 2.0
+    float speedhackSpeed1 = 1.1f;
+    float speedhackSpeed2 = 2.0f;
     int   speedToggleKey = 0;
     bool  noFog = false;
     bool  socketFu = false;
@@ -42,10 +42,10 @@ struct Config {
     bool  autoNoClip = false;
     bool  antiIdle = false;
     float cameraZoomScale = 1.0f;
-    bool  lagPort = false;       // freeze client while lagPortHotkey is held
+    bool  lagPort = false;
     Keybind lagPortHotkey;
 
-    // Auto Nexus.
+
     bool  autoNexus = true;
     bool  autoNexusDisplay = true;
     float autoNexusHpValue = 350.0f;
@@ -53,7 +53,7 @@ struct Config {
     float autoNexusHpPercent = 25.0f;
     bool  detectServerHits = true;
 
-    // Auto Aim.
+
     bool  autoAim = true;
     bool  magnetAim = true;
     bool  magnetRangeExt = true;
@@ -63,27 +63,27 @@ struct Config {
     bool  renderAimInfo = true;
     Keybind aimbotHotkey;
 
-    // Auto Dodge.
+
     bool  autoDodge = false;
     bool  dodgeProjectiles = true;
     bool  dodgeHoldToToggle = true;
     Keybind dodgingHotkey;
     bool  dodgeInvisible = false;
     bool  butterWalk = true;
-    float dodgeHitboxSize = 0.456f; // dword_1801B2CCC default 0.455999911
+    float dodgeHitboxSize = 0.456f;
     int   dodgeMoveAwayMs = 200;
     bool  dodgeAoeBombs = true;
     bool  dodgeAvoidUnits = true;
     float dodgeUnitAvoidanceScale = 1.0f;
-    float dodgeKeepDistance = 0.0f;     // keep this many tiles from enemies (0 = off)
+    float dodgeKeepDistance = 0.0f;
     bool  oldDodgeLogic = false;
     bool  teleportIfOutOfRange = false;
     bool  nexusWhenLost = false;
     float dogeTeleportMax = 0.0f;
-    Keybind tpCaptureHotkey;   // mark current spot as the teleport anchor
-    Keybind tpReturnHotkey;    // teleport back to the anchor
+    Keybind tpCaptureHotkey;
+    Keybind tpReturnHotkey;
 
-    // Render / loot.
+
     bool  enablePoisBags = true;
     bool  playSoundForBags = true;
     bool  bagEgg = true;
@@ -104,11 +104,11 @@ struct Config {
     bool  renderGrid = false;
     bool  renderSafetyPath = false;
 
-    // Misc / stats.
+
     bool  enableGlow = false;
     bool  rainbowGlow = false;
     int   glowStyle = 0;
-    // Outline RGBA (dword_1801AFB98..A4) and glow RGBA (dword_1801AFBF8..C04).
+
     float glowOutline[4] = { 1.0f, 1.0f, 0.5f, 0.8f };
     float glowColor[4]   = { 0.0f, 1.0f, 0.5f, 0.8f };
     bool  showFpm = false;
@@ -117,13 +117,13 @@ struct Config {
     bool  spoofGuildName = false;
     char  guildNameValue[25] = {};
     bool  spoofGuildRank = false;
-    int   guildRankValue = 0;       // 0 Initiate .. 4 Founder (stat 63)
+    int   guildRankValue = 0;
     bool  skinChanger = false;
-    int   skinId = 0;               // stat 25
+    int   skinId = 0;
     bool  dyeChanger = false;
-    int   dyeId = 0;                // stat 32 (cloth dye)
+    int   dyeId = 0;
     bool  accessoryDyeChanger = false;
-    int   accessoryDyeId = 0;       // stat 33 (accessory dye)
+    int   accessoryDyeId = 0;
     bool  stars = false;
     int   starsValue = 0;
     bool  fameValue = false;

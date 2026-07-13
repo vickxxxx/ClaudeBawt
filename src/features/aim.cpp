@@ -1,11 +1,11 @@
-// aim.cpp - Auto Aim / Magnet Aim.
-//
-// Ported from DB_AimCore (0x180085FC0), DB_LineOfSight (0x180085920),
-// sub_1800C8F00 (0x1800C8F00), and DB_SetAutoAimPatch (0x1800CA410).
+
+
+
 #include "features.h"
 #include "config.h"
 #include "il2cpp.h"
 #include "log.h"
+#include "overlay.h"
 
 #include <windows.h>
 #include <algorithm>
@@ -81,9 +81,12 @@ bool QueryTile(Vec2 point, TileInfo& out) {
     const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
     if (!world) return false;
 
-    const uintptr_t squares = *reinterpret_cast<uintptr_t*>(world + 88);
-    const int height = *reinterpret_cast<int*>(world + 256);
-    const int width = *reinterpret_cast<int*>(world + 252);
+    const uintptr_t squares =
+        *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_TILE_GRID);
+    const int height =
+        *reinterpret_cast<int*>(world + ga::off::WORLD_MAP_HEIGHT);
+    const int width =
+        *reinterpret_cast<int*>(world + ga::off::WORLD_MAP_WIDTH);
     if (!squares || height <= 0 || width <= 0) return false;
 
     int x = static_cast<int>(point.x);
@@ -155,12 +158,17 @@ bool LineOfSight(Vec2 from, Vec2 to) {
 }
 
 uint64_t ReadConditions(uintptr_t object) {
-    const uintptr_t effects = *reinterpret_cast<uintptr_t*>(object + 0x248);
+
+
+    const uintptr_t effects =
+        *reinterpret_cast<uintptr_t*>(object + ga::off::OBJECT_EFFECTS);
     if (!effects || effects == UINT64_C(0xCCCCCCCCCCCCCCCC)) return 0;
     const int count = *reinterpret_cast<int*>(effects + 0x18);
     if (count < 1 || count > 8) return 0;
     const uint32_t low = *reinterpret_cast<uint32_t*>(effects + 0x20);
-    const uint32_t high = count >= 2 ? *reinterpret_cast<uint32_t*>(effects + 0x24) : 0;
+    const uint32_t high = count >= 2
+        ? *reinterpret_cast<uint32_t*>(effects + 0x24)
+        : 0;
     return low | (static_cast<uint64_t>(high) << 32);
 }
 
@@ -168,7 +176,9 @@ void SnapshotTargets(std::vector<Target>& targets) {
     targets.clear();
     const uintptr_t root = game::Root();
     const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
-    const uintptr_t manager = world ? *reinterpret_cast<uintptr_t*>(world + 176) : 0;
+    const uintptr_t manager = world
+        ? *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_OBJECT_MANAGER)
+        : 0;
     const uintptr_t list = manager ? *reinterpret_cast<uintptr_t*>(manager + 24) : 0;
     if (!list) return;
 
@@ -272,9 +282,9 @@ uint8_t g_backup[40]{};
 
 void SetAutoAimPatch(bool enable) {
     if (enable == g_patchEnabled) return;
-    auto* site = static_cast<uint8_t*>(ga::Rva(ga::rva::PATCH_AIM));
+    auto* site = static_cast<uint8_t*>(ga::Rva(ga::rva::AIM_POINT_PATCH));
     DBLOG("SetAutoAimPatch: enable=%d site=%p (GA+0x%llX)", (int)enable, (void*)site,
-          (unsigned long long)ga::rva::PATCH_AIM);
+          (unsigned long long)ga::rva::AIM_POINT_PATCH);
     if (!site) return;
 
     DWORD oldProtection = 0;
@@ -339,7 +349,9 @@ int64_t __fastcall HookAim(uintptr_t self, float inputAngle) {
 
     POINT cursor{};
     GetCursorPos(&cursor);
-    if (HWND window = GetForegroundWindow())
+
+
+    if (HWND window = overlay::Window())
         ScreenToClient(window, &cursor);
 
     CameraMatrix camera{};
@@ -424,12 +436,12 @@ int64_t __fastcall HookAim(uintptr_t self, float inputAngle) {
     return g_originalAim ? g_originalAim(self, outputAngle) : 0;
 }
 
-} // namespace
+}
 
 void Install() {
-    void* target = ga::Rva(ga::rva::AIM_FN);
+    void* target = ga::Rva(ga::rva::SHOT_UPDATE);
     DBLOG("aim::Install: aim-hook target=%p (GA+0x%llX)", target,
-          (unsigned long long)ga::rva::AIM_FN);
+          (unsigned long long)ga::rva::SHOT_UPDATE);
     if (target) {
         MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void*>(&HookAim),
                       reinterpret_cast<void**>(&g_originalAim));
@@ -445,4 +457,4 @@ void Tick() {
     SetAutoAimPatch(g_cfg.autoAim);
 }
 
-} // namespace aim
+}

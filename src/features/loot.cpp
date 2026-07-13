@@ -1,10 +1,6 @@
-// loot.cpp - POI overlay.
-//
-// The original record renderer (sub_1800DBE10) draws a line from 0.25 to 1.0
-// world units toward each record and labels its end point.  POIs are object
-// type 20800 and use color 0xFFFF84FF.  Bag records require the original
-// ushort->(name,color,enabled) registry; the current shared Config/API does not
-// expose that registry, so this file deliberately does not guess bag IDs.
+
+
+
 #include "features.h"
 #include "config.h"
 #include "il2cpp.h"
@@ -84,7 +80,7 @@ void DrawPoi(const Matrix& matrix, float px, float py, float x, float y) {
                   color, "POI");
 }
 
-} // namespace
+}
 
 void Install() {}
 
@@ -99,7 +95,8 @@ void Tick() {
     uintptr_t world = *reinterpret_cast<uintptr_t*>(root + 0x28);
     if (!world)
         return;
-    uintptr_t owner = *reinterpret_cast<uintptr_t*>(world + 0xB0);
+    uintptr_t owner =
+        *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_OBJECT_MANAGER);
     if (!owner)
         return;
     uintptr_t list = *reinterpret_cast<uintptr_t*>(owner + 0x18);
@@ -112,17 +109,17 @@ void Tick() {
     Matrix matrix{};
     if (!Camera(matrix))
         return;
-    float px = *reinterpret_cast<float*>(player + ga::off::OBJ_X);
-    float py = *reinterpret_cast<float*>(player + ga::off::OBJ_Y);
+    float px = *reinterpret_cast<float*>(player + ga::off::OBJECT_X);
+    float py = *reinterpret_cast<float*>(player + ga::off::OBJECT_Y);
 
     for (uint32_t i = 0; i < count; ++i) {
         uintptr_t object = *reinterpret_cast<uintptr_t*>(list + 0x30 + 0x18ull * i);
-        if (!object || *reinterpret_cast<int*>(object + ga::off::OBJ_TYPE) != kPoiType)
+        if (!object || *reinterpret_cast<int*>(object + ga::off::OBJECT_TYPE) != kPoiType)
             continue;
         DrawPoi(matrix, px, py,
-                *reinterpret_cast<float*>(object + ga::off::OBJ_X),
-                *reinterpret_cast<float*>(object + ga::off::OBJ_Y));
+                *reinterpret_cast<float*>(object + ga::off::OBJECT_X),
+                *reinterpret_cast<float*>(object + ga::off::OBJECT_Y));
     }
 }
 
-} // namespace loot
+}

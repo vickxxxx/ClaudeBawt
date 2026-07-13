@@ -71,7 +71,7 @@ bool Project(const CameraMatrix& matrix, float worldX, float worldY,
            screen.y >= 0.0f && screen.y <= static_cast<float>(height);
 }
 
-} // namespace
+}
 
 void Tick() {
     if (!g_cfg.renderHitbox || !ImGui::GetCurrentContext())
@@ -85,14 +85,13 @@ void Tick() {
     if (!GetCamera(camera))
         return;
 
-    const float x = *reinterpret_cast<float*>(player + ga::off::OBJ_X);
-    const float y = *reinterpret_cast<float*>(player + ga::off::OBJ_Y);
+    const float x = *reinterpret_cast<float*>(player + ga::off::OBJECT_X);
+    const float y = *reinterpret_cast<float*>(player + ga::off::OBJECT_Y);
     const float halfSize = g_cfg.dodgeHitboxSize;
     if (!(halfSize > 0.0f))
         return;
 
-    // This is the same axis-aligned square tested by dodge::PositionSafe:
-    // [x-halfSize, x+halfSize] x [y-halfSize, y+halfSize].
+
     ImVec2 corners[4];
     if (!Project(camera, x - halfSize, y - halfSize, corners[0]) ||
         !Project(camera, x + halfSize, y - halfSize, corners[1]) ||
@@ -107,4 +106,4 @@ void Tick() {
     draw->AddPolyline(corners, 4, outline, 2.0f, ImDrawFlags_Closed);
 }
 
-} // namespace render_hitbox
+}

@@ -7,7 +7,7 @@ namespace util {
         if (!addr || !bytes || !len || len > 256) return false;
 
         DWORD old = 0;
-        // Original always passes a 256-byte region to VirtualProtect.
+
         if (!VirtualProtect(addr, 256, PAGE_EXECUTE_READWRITE, &old))
             return false;
 

@@ -1,4 +1,4 @@
-// fame.cpp - fame/account-fame overrides and current fame-per-minute display.
+
 #include "features.h"
 #include "config.h"
 #include "il2cpp.h"
@@ -15,11 +15,10 @@
 namespace fame {
 namespace {
 
-constexpr uintptr_t kStatsUpdateRva = 0xA37390;
-constexpr uintptr_t kFameWritePatchRva = 0xA484FF;
+constexpr uintptr_t kStatsUpdateRva = 0xC2CCF0;
+constexpr uintptr_t kFameWritePatchRva = 0x365E2F;
 
-using StatsUpdateFn =
-    int64_t (__fastcall*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
+using StatsUpdateFn = int64_t (__fastcall*)(uintptr_t, uintptr_t);
 StatsUpdateFn oStatsUpdate = nullptr;
 int g_selectedObjectId = -1;
 
@@ -141,10 +140,7 @@ CHARACTER_PLAYER_HOOK(4)
 CHARACTER_PLAYER_HOOK(5)
 #undef CHARACTER_PLAYER_HOOK
 
-// sub_180086880: overwrite a string stat's value object in place (il2cpp string:
-// length at +0x10, UTF-16 chars at +0x14). The original requires the existing
-// length to be 2..24; we additionally never write past it, so we can't overflow
-// the string's buffer even if our text is longer.
+
 void WriteStatString(uintptr_t stat, const char* text) {
     const uintptr_t strObj = *reinterpret_cast<uintptr_t*>(stat + 0x18);
     if (strObj <= 0xFFFF || !text)
@@ -177,8 +173,8 @@ void RewriteSelectedStats(uintptr_t packet) {
         return;
 
     for (int i = 0; i < outerCount; ++i) {
-        // sub_180086960: each packet-list entry is the update object itself.
-        // Its descriptor is +0x18, with object id +0x10 and stats list +0x20.
+
+
         uintptr_t objectUpdate =
             *reinterpret_cast<uintptr_t*>(outerData + 0x20 + 8ull * i);
         if (!objectUpdate)
@@ -222,11 +218,14 @@ void RewriteSelectedStats(uintptr_t packet) {
     }
 }
 
-int64_t __fastcall hkStatsUpdate(uintptr_t self, uintptr_t packet,
-                                 uintptr_t context1, uintptr_t context2) {
+int64_t __fastcall hkStatsUpdate(uintptr_t self, uintptr_t packet) {
     if (packet) {
         uintptr_t descriptor = *reinterpret_cast<uintptr_t*>(packet);
-        uintptr_t kindPtr = descriptor ? *reinterpret_cast<uintptr_t*>(descriptor + 0x318) : 0;
+
+
+        uintptr_t kindPtr = descriptor
+            ? *reinterpret_cast<uintptr_t*>(descriptor + 0x2B8)
+            : 0;
         uint8_t kind = kindPtr ? *reinterpret_cast<uint8_t*>(kindPtr + 1) : 0;
         if (kind == 92)
             g_selectedObjectId = -1;
@@ -236,9 +235,7 @@ int64_t __fastcall hkStatsUpdate(uintptr_t self, uintptr_t packet,
         } else if (kind == 42)
             RewriteSelectedStats(packet);
     }
-    const int64_t result = oStatsUpdate
-        ? oStatsUpdate(self, packet, context1, context2)
-        : 0;
+    const int64_t result = oStatsUpdate ? oStatsUpdate(self, packet) : 0;
     return result;
 }
 
@@ -300,14 +297,14 @@ void DrawFpm(uintptr_t player) {
         fpm = 0.0;
 
     ImGui::SetNextWindowBgAlpha(0.35f);
-    ImGui::Begin("##dogebawt_fpm", nullptr,
+    ImGui::Begin("##client_fpm", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                  ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings);
     ImGui::Text("FPM: %.2f", fpm);
     ImGui::End();
 }
 
-} // namespace
+}
 
 void Install() {
     HMODULE game = GetModuleHandleA("GameAssembly.dll");
@@ -439,4 +436,4 @@ void Poll() {
     }
 }
 
-} // namespace fame
+}
