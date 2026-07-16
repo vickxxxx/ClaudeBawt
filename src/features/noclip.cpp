@@ -25,13 +25,19 @@ using CollisionFn = void(__fastcall*)(uintptr_t, uint32_t);
 CollisionFn g_orig = nullptr;
 
 
-constexpr uintptr_t kCanMoveRva = 0x1EAB6A0;
-constexpr uintptr_t kIsSolidRva = 0x1EAA410;
-using PredFn = int64_t(__fastcall*)(uintptr_t, uintptr_t, uintptr_t, uintptr_t);
-PredFn g_origCanMove = nullptr;
-PredFn g_origIsSolid = nullptr;
+// Exact HJMBOMEHGDJ method migration from the dump that produced the old
+// constants:
+//   CanMove: PEGDEDNHEHD(float,float)  0x1EAB6A0 -> 0x504640
+//   IsSolid: OKFBFBNJEBH(float,float)  0x1EAA410 -> 0x502E80
+constexpr uintptr_t kCanMoveRva = 0x504640;
+constexpr uintptr_t kIsSolidRva = 0x502E80;
+using CanMoveFn = uint8_t(__fastcall*)(uintptr_t, float, float, uintptr_t);
+using IsSolidFn = uint8_t(__fastcall*)(uintptr_t, float, float, uintptr_t);
+CanMoveFn g_origCanMove = nullptr;
+IsSolidFn g_origIsSolid = nullptr;
 
 std::atomic<bool> g_gate{false};
+std::atomic<bool> g_bypassWalls{false};
 bool      g_engaged = false;
 uint32_t  g_originalDword = kPatchRestoreDefault;
 bool      g_haveOriginal = false;
@@ -46,16 +52,29 @@ bool    g_dbgB25 = false;
 int     g_dbgDmg = 0;
 bool    g_dbgHadTile = false;
 bool    g_manual = false;
+bool    g_hotkeyWasDown = false;
+
+bool HotkeyDown(const Keybind& bind) {
+    int vk = bind.vk;
+    if (vk < 0) {
+        static constexpr int mouseKeys[] = {
+            VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2
+        };
+        const int button = -vk - 1;
+        if (button < 0 || button >=
+                static_cast<int>(sizeof(mouseKeys) / sizeof(mouseKeys[0])))
+            return false;
+        vk = mouseKeys[button];
+    }
+    return vk > 0 && (GetAsyncKeyState(vk) & 0x8000) != 0;
+}
 
 
 bool TileIsWall(float x, float y) {
     if (x < 0.0f || y < 0.0f)
         return false;
 
-    uintptr_t world = game::Root();
-    if (!world)
-        return false;
-    uintptr_t ws = *reinterpret_cast<uintptr_t*>(world + 40);
+    uintptr_t ws = game::Root();
     if (!ws)
         return false;
 
@@ -125,9 +144,14 @@ void Engage() {
     if (site) {
         if (!g_haveOriginal) {
             std::memcpy(&g_originalDword, site, sizeof(g_originalDword));
+            if (g_originalDword != kPatchRestoreDefault) {
+                DBLOG("noclip: patch signature mismatch at %p (got 0x%08X)",
+                      site, g_originalDword);
+                return;
+            }
             g_haveOriginal = true;
         }
-        uint32_t v = kPatchEngage;
+        const uint32_t v = kPatchEngage;
         util::Patch(site, &v, sizeof(v));
     }
     g_gate.store(true, std::memory_order_release);
@@ -140,43 +164,52 @@ void Disengage() {
         return;
     void* site = ga::Rva(ga::rva::MOVEMENT_FLAG_PATCH);
     if (site) {
-        uint32_t v = g_haveOriginal ? g_originalDword : kPatchRestoreDefault;
+        const uint32_t v = g_haveOriginal
+            ? g_originalDword
+            : kPatchRestoreDefault;
         util::Patch(site, &v, sizeof(v));
     }
     g_gate.store(false, std::memory_order_release);
+    g_bypassWalls.store(false, std::memory_order_release);
     g_engaged = false;
     g_offWallSince = 0;
     DBLOG("noclip: DISENGAGE");
 }
 
 
-void __fastcall hkCollision(uintptr_t a1, uint32_t a2) {
+void __fastcall hkCollision(uintptr_t self, uint32_t value) {
     static bool once = false;
     if (!once) { once = true; DBLOG("hkCollision: first call"); }
 
 
-    if (!g_gate.load(std::memory_order_acquire)) {
-        if (g_orig)
-            g_orig(a1, a2);
-    }
+    if (!g_bypassWalls.load(std::memory_order_acquire) && g_orig)
+        g_orig(self, value);
 }
 
 
-int64_t __fastcall hkCanMove(uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
+uint8_t __fastcall hkCanMove(uintptr_t self, float x, float y,
+                             uintptr_t methodInfo) {
     static bool once = false;
     if (!once) { once = true; DBLOG("hkCanMove: first call"); }
-    const int64_t r = g_origCanMove ? g_origCanMove(a1, a2, a3, a4) : 0;
-    if (!(static_cast<uint8_t>(r)) && g_cfg.autoNoClip)
+    const uint8_t r = g_origCanMove
+        ? g_origCanMove(self, x, y, methodInfo)
+        : 0;
+    if (!r && g_cfg.autoNoClip)
         g_onWall = true;
-    if (g_gate.load(std::memory_order_acquire))
+    if (g_bypassWalls.load(std::memory_order_acquire))
         return 1;
     return r;
 }
 
 
-int64_t __fastcall hkIsSolid(uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
-    const int64_t r = g_origIsSolid ? g_origIsSolid(a1, a2, a3, a4) : 0;
-    if (g_gate.load(std::memory_order_acquire))
+uint8_t __fastcall hkIsSolid(uintptr_t self, float x, float y,
+                             uintptr_t methodInfo) {
+    static bool once = false;
+    if (!once) { once = true; DBLOG("hkIsSolid: first call"); }
+    const uint8_t r = g_origIsSolid
+        ? g_origIsSolid(self, x, y, methodInfo)
+        : 0;
+    if (g_bypassWalls.load(std::memory_order_acquire))
         return 0;
     return r;
 }
@@ -208,13 +241,7 @@ bool GateActive() {
 
 
 void SetManual(bool on) {
-    if (on == g_manual)
-        return;
     g_manual = on;
-    if (on)
-        Engage();
-    else
-        Disengage();
 }
 
 void Install() {
@@ -250,11 +277,22 @@ void Tick() {
 
 
 void Poll() {
-    if (g_manual) {
+    const bool hotkeyDown = HotkeyDown(g_cfg.noclipHotkey);
+    if (!g_cfg.noclipHotkey.listening && hotkeyDown && !g_hotkeyWasDown)
+        g_cfg.noclipEnabled = !g_cfg.noclipEnabled;
+    g_hotkeyWasDown = hotkeyDown;
+
+    if (g_manual || g_cfg.noclipEnabled) {
+        if (!g_engaged)
+            Engage();
+        g_bypassWalls.store(
+            g_manual || g_cfg.noclipEnabled,
+            std::memory_order_release);
         g_onWall = false;
         return;
     }
     if (!g_cfg.autoNoClip) {
+        g_bypassWalls.store(false, std::memory_order_release);
         if (g_engaged)
             Disengage();
         g_onWall = false;
@@ -265,12 +303,17 @@ void Poll() {
     if (g_onWall) {
         if (!g_engaged)
             Engage();
+        g_bypassWalls.store(true, std::memory_order_release);
         g_offWallSince = 0;
     } else if (g_engaged) {
         if (g_offWallSince == 0)
             g_offWallSince = now + kOffWallGraceMs;
-        else if (now >= g_offWallSince)
+        else if (now >= g_offWallSince) {
+            g_bypassWalls.store(false, std::memory_order_release);
             Disengage();
+        }
+    } else {
+        g_bypassWalls.store(false, std::memory_order_release);
     }
     g_onWall = false;
 }

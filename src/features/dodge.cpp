@@ -8,6 +8,7 @@
 
 #include <windows.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -18,6 +19,8 @@
 
 namespace dodge {
 namespace {
+
+std::atomic<bool> g_bindSuspended{false};
 
 struct Vec2 {
     float x;
@@ -56,12 +59,11 @@ struct TileInfo {
 };
 
 
-constexpr uintptr_t kMoveUpdateRva = 0x35E160;
-constexpr uintptr_t kMoveSpeedRva = 0x362770;
+constexpr uintptr_t kMoveUpdateRva = 0x7CC950; // 2026-07-16 CJCEGCEMIGE(float, float)
+constexpr uintptr_t kMoveSpeedRva = 0x7D0EE0; // 2026-07-16 GAFGPNKFMOJ()
 
-constexpr uintptr_t kProjectilePositionRva = 0x63CBA0;
-constexpr uintptr_t kPlayerUpdateRva = 0x363600;
-constexpr uintptr_t kMovementPushOffset = 0x788;
+constexpr uintptr_t kPlayerUpdateRva = 0x7D1D50; // 2026-07-16 GJFKGLJEGKO(int, int)
+constexpr uintptr_t kCollisionRadiusMultiplierOffset = 0x788; // ObjectProperties::collisionRadiusMultiplier
 
 
 constexpr float kCandidatePadding = 0.06f;
@@ -93,8 +95,7 @@ bool QueryTile(Vec2 point, TileInfo& out) {
     out = {};
     if (point.x < 0.0f || point.y < 0.0f) return false;
 
-    const uintptr_t root = game::Root();
-    const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
+    const uintptr_t world = game::Root();
     if (!world) return false;
     const uintptr_t squares =
         *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_TILE_GRID);
@@ -141,8 +142,6 @@ bool QueryTile(Vec2 point, TileInfo& out) {
 }
 
 bool SegmentBlocked(Vec2 from, Vec2 to) {
-
-
     const float midpointX = std::round((from.x + to.x) * 0.5f);
     const float midpointY = std::round((from.y + to.y) * 0.5f);
     static constexpr Vec2 corners[] = {
@@ -193,8 +192,7 @@ VisibilityMap SnapshotVisibility() {
     if (g_cfg.dodgeInvisible)
         return visibility;
 
-    const uintptr_t root = game::Root();
-    const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
+    const uintptr_t world = game::Root();
     const uintptr_t manager = world
         ? *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_OBJECT_MANAGER)
         : 0;
@@ -231,8 +229,7 @@ std::vector<Vec2> GatherEnemies() {
     if (g_cfg.dodgeKeepDistance <= 0.0f)
         return enemies;
 
-    const uintptr_t root = game::Root();
-    const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
+    const uintptr_t world = game::Root();
     const uintptr_t manager = world
         ? *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_OBJECT_MANAGER)
         : 0;
@@ -246,11 +243,12 @@ std::vector<Vec2> GatherEnemies() {
     for (uint32_t i = 0; i < count; ++i) {
         const uintptr_t object = *reinterpret_cast<uintptr_t*>(list + 48 + 24ull * i);
         if (object <= 0xFFFF) continue;
-        if (*reinterpret_cast<int*>(object + 0x20C) <= 0) continue;
-        const uintptr_t status = *reinterpret_cast<uintptr_t*>(object + 0x18);
+        if (*reinterpret_cast<int*>(object + ga::off::OBJECT_HEALTH) <= 0) continue;
+        const uintptr_t status =
+            *reinterpret_cast<uintptr_t*>(object + ga::off::OBJECT_STATUS);
         if (status <= 0xFFFF || *reinterpret_cast<uint8_t*>(status + 1745) == 0) continue;
-        enemies.push_back({*reinterpret_cast<float*>(object + 0x3C),
-                           *reinterpret_cast<float*>(object + 0x40)});
+        enemies.push_back({*reinterpret_cast<float*>(object + ga::off::OBJECT_X),
+                           *reinterpret_cast<float*>(object + ga::off::OBJECT_Y)});
     }
     return enemies;
 }
@@ -276,7 +274,8 @@ bool ProjectileBlockedByWall(Vec2 p, bool passThrough) {
 }
 
 bool ProjectilePosition(uintptr_t projectile, float futureMs, Vec2& out) {
-    auto fn = reinterpret_cast<ProjectilePositionFn>(ga::Rva(kProjectilePositionRva));
+    auto fn = reinterpret_cast<ProjectilePositionFn>(
+        ga::Rva(ga::rva::PROJECTILE_POSITION));
     if (!fn || projectile <= 0xFFFF) return false;
 
 
@@ -290,8 +289,7 @@ bool ProjectilePosition(uintptr_t projectile, float futureMs, Vec2& out) {
 
 void GatherThreats(std::vector<Threat>& threats, int gameTime) {
     threats.clear();
-    const uintptr_t root = game::Root();
-    const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
+    const uintptr_t world = game::Root();
     const uintptr_t manager = world
         ? *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_PROJECTILE_MANAGER)
         : 0;
@@ -558,16 +556,17 @@ float MoveSpeed(uintptr_t player) {
 
 
 int64_t __fastcall HookMoveUpdate(uintptr_t player, float targetX, float targetY) {
-
+    if (player > 0xFFFF)
+        game::CapturePlayer(player);
 
     noclip::NoteMoveTarget(targetX, -targetY);
 
 
-    if (!g_cfg.dodgeProjectiles || !player)
+    if (!g_cfg.dodgeProjectiles ||
+        g_bindSuspended.load(std::memory_order_acquire) || !player)
         return g_originalMoveUpdate ? g_originalMoveUpdate(player, targetX, targetY) : 0;
 
-    const uintptr_t root = game::Root();
-    const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
+    const uintptr_t world = game::Root();
     if (!world)
         return g_originalMoveUpdate ? g_originalMoveUpdate(player, targetX, targetY) : 0;
 
@@ -577,14 +576,12 @@ int64_t __fastcall HookMoveUpdate(uintptr_t player, float targetX, float targetY
         ? std::clamp(gameTime - previousGameTime, 1, 100)
         : 1;
     previousGameTime = gameTime;
-    const Vec2 current{*reinterpret_cast<float*>(player + 0x3C),
-                       *reinterpret_cast<float*>(player + 0x40)};
+    const Vec2 current{*reinterpret_cast<float*>(player + ga::off::OBJECT_X),
+                       *reinterpret_cast<float*>(player + ga::off::OBJECT_Y)};
     const Vec2 requested{targetX, -targetY};
 
     std::vector<Threat> threats;
     GatherThreats(threats, gameTime);
-
-
     const std::vector<Vec2> enemies = GatherEnemies();
     const float keep = g_cfg.dodgeKeepDistance;
     auto InBuffer = [&](Vec2 p) {
@@ -641,10 +638,12 @@ PlayerUpdateFn g_originalPlayerUpdate = nullptr;
 
 char __fastcall HookPlayerUpdate(uintptr_t player, int32_t now, int32_t delta,
                                  void* method) {
+    if (player > 0xFFFF)
+        game::CapturePlayer(player);
     if (player) {
         const uintptr_t status = *reinterpret_cast<uintptr_t*>(player + 0x18);
         if (status > 0xFFFF)
-            *reinterpret_cast<float*>(status + kMovementPushOffset) = 0.0f;
+            *reinterpret_cast<float*>(status + kCollisionRadiusMultiplierOffset) = 0.0f;
     }
     return g_originalPlayerUpdate
         ? g_originalPlayerUpdate(player, now, delta, method)
@@ -677,7 +676,18 @@ void Install() {
 }
 
 void Tick() {
-
+    static bool wasDown = false;
+    const bool down = g_cfg.dodgingHotkey.Pressed();
+    if (g_cfg.dodgeHoldToToggle) {
+        // The hold mode is a temporary override: hold the bind (Space by
+        // default in the user's config) to stop dodge, release to resume.
+        g_bindSuspended.store(down, std::memory_order_release);
+    } else {
+        g_bindSuspended.store(false, std::memory_order_release);
+        if (down && !wasDown)
+            g_cfg.dodgeProjectiles = !g_cfg.dodgeProjectiles;
+    }
+    wasDown = down;
 }
 
 }

@@ -15,6 +15,9 @@ struct Config {
     int   menuToggleHotkey = 0x2D;
     int   menuTheme = 0;
     bool  menuBackground = true;
+    bool  showBindsOverlay = true;
+    bool  notificationCenter = true;
+    float notificationDuration = 4.0f;
     bool  titleBarActive = true;
     bool  sideBarBackground = true;
     float colorMenuBackground[4] = { 0.20f, 0.05f, 0.20f, 0.75f };
@@ -35,25 +38,16 @@ struct Config {
     int   speedToggleKey = 0;
     bool  noFog = false;
     bool  socketFu = false;
+    Keybind socketFuHotkey;
     bool  showSocketFuTimer = false;
     bool  socketFuUseSecondSpeed = false;
     bool  socketFuRestrictMovement = false;
     bool  socketFuNoClip = false;
     bool  autoNoClip = false;
+    bool  noclipEnabled = false;
+    Keybind noclipHotkey;
     bool  antiIdle = false;
     float cameraZoomScale = 1.0f;
-    bool  lagPort = false;
-    Keybind lagPortHotkey;
-
-
-    bool  autoNexus = true;
-    bool  autoNexusDisplay = true;
-    float autoNexusHpValue = 350.0f;
-    bool  autoNexusUsePercent = false;
-    float autoNexusHpPercent = 25.0f;
-    bool  detectServerHits = true;
-
-
     bool  autoAim = true;
     bool  magnetAim = true;
     bool  magnetRangeExt = true;
@@ -61,6 +55,8 @@ struct Config {
     float magnetAimRange = 1.8f;
     bool  projectileNoClip = true;
     bool  renderAimInfo = true;
+    bool  renderMagnetRange = true;
+    bool  renderNormalAimRange = true;
     Keybind aimbotHotkey;
 
 
@@ -77,13 +73,6 @@ struct Config {
     float dodgeUnitAvoidanceScale = 1.0f;
     float dodgeKeepDistance = 0.0f;
     bool  oldDodgeLogic = false;
-    bool  teleportIfOutOfRange = false;
-    bool  nexusWhenLost = false;
-    float dogeTeleportMax = 0.0f;
-    Keybind tpCaptureHotkey;
-    Keybind tpReturnHotkey;
-
-
     bool  enablePoisBags = true;
     bool  playSoundForBags = true;
     bool  bagEgg = true;
@@ -98,11 +87,29 @@ struct Config {
     bool  bagRed = true;
     bool  renderProjectiles = false;
     bool  renderAoeDebug = false;
+    float aoeDebugRadius = 1.50f;
+    bool  aoeDebugCountdown = true;
+    bool  projectileBreadcrumbs = false;
+    float projectileBreadcrumbLifetime = 0.80f;
+    float projectileBreadcrumbThickness = 1.75f;
     bool  renderTiles = false;
     bool  renderUnits = false;
     bool  renderHitbox = false;
     bool  renderGrid = false;
     bool  renderSafetyPath = false;
+    bool  interactiveMapEnabled = false;
+    bool  mapShowNames = true;
+    bool  mapShowPortals = true;
+    bool  mapShowRookie = true;
+    bool  mapShowAdept = true;
+    bool  mapShowVeteran = true;
+    float interactiveMapZoom = 1.0f;
+    bool  menuSnow = true;
+    float menuSnowIntensity = 0.75f;
+    bool  menuAnimatedBorder = true;
+    bool  menuCrownShimmer = true;
+    bool  menuCustomCrosshair = true;
+    bool  menuCursorSnowTrail = true;
 
 
     bool  enableGlow = false;

@@ -10,8 +10,10 @@
 #include "imgui_impl_win32.h"
 
 #include <windows.h>
+#include <wincodec.h>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 extern int g_viewW, g_viewH;
 
@@ -24,6 +26,58 @@ namespace overlay {
         ID3D11RenderTargetView* s_rtv = nullptr;
         ID3D11Texture2D*        s_backBuffer = nullptr;
         IDXGISwapChain*         s_swap = nullptr;
+        ID3D11ShaderResourceView* s_logo = nullptr;
+
+        bool LoadLogoTexture(const char* path, UINT& width, UINT& height) {
+            IWICImagingFactory* factory = nullptr;
+            IWICBitmapDecoder* decoder = nullptr;
+            IWICBitmapFrameDecode* frame = nullptr;
+            IWICFormatConverter* converter = nullptr;
+            ID3D11Texture2D* texture = nullptr;
+            wchar_t widePath[MAX_PATH]{};
+            bool ok = false;
+
+            if (!path || !s_device || !MultiByteToWideChar(
+                    CP_UTF8, 0, path, -1, widePath, MAX_PATH))
+                return false;
+
+            if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                    CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+                SUCCEEDED(factory->CreateDecoderFromFilename(widePath, nullptr,
+                    GENERIC_READ, WICDecodeMetadataCacheOnLoad, &decoder)) &&
+                SUCCEEDED(decoder->GetFrame(0, &frame)) &&
+                SUCCEEDED(factory->CreateFormatConverter(&converter)) &&
+                SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppRGBA,
+                    WICBitmapDitherTypeNone, nullptr, 0.0,
+                    WICBitmapPaletteTypeCustom)) &&
+                SUCCEEDED(converter->GetSize(&width, &height)) && width && height) {
+                std::vector<unsigned char> pixels(
+                    static_cast<size_t>(width) * height * 4);
+                if (SUCCEEDED(converter->CopyPixels(nullptr, width * 4,
+                        static_cast<UINT>(pixels.size()), pixels.data()))) {
+                    D3D11_TEXTURE2D_DESC textureDesc{};
+                    textureDesc.Width = width;
+                    textureDesc.Height = height;
+                    textureDesc.MipLevels = 1;
+                    textureDesc.ArraySize = 1;
+                    textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                    textureDesc.SampleDesc.Count = 1;
+                    textureDesc.Usage = D3D11_USAGE_IMMUTABLE;
+                    textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                    D3D11_SUBRESOURCE_DATA data{pixels.data(), width * 4, 0};
+                    if (SUCCEEDED(s_device->CreateTexture2D(
+                            &textureDesc, &data, &texture)))
+                        ok = SUCCEEDED(s_device->CreateShaderResourceView(
+                            texture, nullptr, &s_logo));
+                }
+            }
+            if (texture) texture->Release();
+            if (converter) converter->Release();
+            if (frame) frame->Release();
+            if (decoder) decoder->Release();
+            if (factory) factory->Release();
+            return ok;
+        }
 
         void ReleaseRenderTarget() {
             if (s_rtv) { s_rtv->Release(); s_rtv = nullptr; }
@@ -91,6 +145,7 @@ namespace overlay {
 
         char dllPath[MAX_PATH]{};
         char boldPath[MAX_PATH]{};
+        char logoPath[MAX_PATH]{};
         HMODULE self = nullptr;
         GetModuleHandleExA(
             GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -99,9 +154,15 @@ namespace overlay {
         GetModuleFileNameA(self, dllPath, MAX_PATH);
         char* slash = std::strrchr(dllPath, '\\');
         if (slash) *slash = '\0';
-        std::snprintf(boldPath, sizeof(boldPath), "%s\\font\\PixelOperator-Bold.ttf", dllPath);
+        std::snprintf(boldPath, sizeof(boldPath), "%s\\font\\Regius.ttf", dllPath);
+        std::snprintf(logoPath, sizeof(logoPath), "%s\\crown.png", dllPath);
 
         ImFont* bold = io.Fonts->AddFontFromFileTTF(boldPath, fontSize, &fontCfg);
+        if (!bold) {
+            std::snprintf(boldPath, sizeof(boldPath),
+                          "%s\\font\\PixelOperator-Bold.ttf", dllPath);
+            bold = io.Fonts->AddFontFromFileTTF(boldPath, fontSize, &fontCfg);
+        }
         if (!bold) bold = io.Fonts->AddFontDefault(&fontCfg);
         io.FontDefault = bold;
         menu::SetFonts(bold, bold);
@@ -121,6 +182,15 @@ namespace overlay {
             ImGui::DestroyContext();
             ReleaseDevice();
             return false;
+        }
+
+        UINT logoWidth = 0;
+        UINT logoHeight = 0;
+        if (LoadLogoTexture(logoPath, logoWidth, logoHeight)) {
+            menu::SetLogo(s_logo, static_cast<float>(logoWidth),
+                          static_cast<float>(logoHeight));
+        } else {
+            DBLOG("overlay::Init: crown logo not found at %s", logoPath);
         }
 
         s_init = true;
@@ -173,6 +243,9 @@ namespace overlay {
         }
 
         menu::SetOpen(false);
+        interactive_map::Shutdown();
+        menu::SetLogo(nullptr, 0.0f, 0.0f);
+        if (s_logo) { s_logo->Release(); s_logo = nullptr; }
         skin_catalog::Shutdown();
         Config_Save();
         ImGui_ImplDX11_Shutdown();

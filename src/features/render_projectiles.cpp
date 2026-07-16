@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 
@@ -19,12 +20,12 @@ extern int g_viewW, g_viewH;
 namespace render_projectiles {
 namespace {
 
-constexpr uintptr_t kProjectilePositionRva = 0x63CBA0;
 constexpr int kAoeObjectType = 14174;
 constexpr uint32_t kMaxProjectileCount = 10000;
 constexpr float kMaxLifetimeMs = 125000.0f;
 constexpr float kViewScale = 0.8125f;
 constexpr int kDebugSegments = 24;
+constexpr int kBreadcrumbSegments = 20;
 
 struct Vec2 {
     float x;
@@ -44,20 +45,7 @@ bool SanePointer(uintptr_t value) {
 }
 
 bool Camera(Matrix& out) {
-    const uintptr_t root = game::Root();
-    if (!SanePointer(root)) return false;
-    const uintptr_t cameraOwner = *reinterpret_cast<uintptr_t*>(root + 0x30);
-    if (!SanePointer(cameraOwner)) return false;
-    const uintptr_t cameraGroup = *reinterpret_cast<uintptr_t*>(cameraOwner + 0x50);
-    if (!SanePointer(cameraGroup)) return false;
-    const uintptr_t camera = *reinterpret_cast<uintptr_t*>(cameraGroup + 0x10);
-    if (!SanePointer(camera)) return false;
-
-    std::memcpy(out.c0, reinterpret_cast<const void*>(camera + 0x2FC), 16);
-    std::memcpy(out.c1, reinterpret_cast<const void*>(camera + 0x30C), 16);
-    std::memcpy(out.c2, reinterpret_cast<const void*>(camera + 0x31C), 16);
-    std::memcpy(out.c3, reinterpret_cast<const void*>(camera + 0x32C), 16);
-    return true;
+    return game::CameraMatrix(reinterpret_cast<float (*)[4]>(&out));
 }
 
 bool Project(const Matrix& matrix, Vec2 world, ImVec2& screen) {
@@ -83,7 +71,7 @@ bool Project(const Matrix& matrix, Vec2 world, ImVec2& screen) {
 
 bool ProjectilePosition(uintptr_t projectile, float timeMs, Vec2& out) {
     const auto fn =
-        reinterpret_cast<ProjectilePositionFn>(ga::Rva(kProjectilePositionRva));
+        reinterpret_cast<ProjectilePositionFn>(ga::Rva(ga::rva::PROJECTILE_POSITION));
     if (!fn || !SanePointer(projectile) || !std::isfinite(timeMs)) return false;
 
 
@@ -131,6 +119,40 @@ void DrawProjectile(ImDrawList* draw, const Matrix& matrix, uintptr_t projectile
                         IM_COL32(0, 0, 0, 190), 16, 1.5f);
     }
 
+    if (g_cfg.projectileBreadcrumbs && elapsed > 0.0f) {
+        const float historyMs =
+            std::min(elapsed, g_cfg.projectileBreadcrumbLifetime * 1000.0f);
+        const float firstTime = elapsed - historyMs;
+        ImVec2 previousScreen{};
+        bool havePrevious = false;
+        for (int i = 0; i <= kBreadcrumbSegments; ++i) {
+            const float progress = static_cast<float>(i) / kBreadcrumbSegments;
+            const float sampleTime = firstTime + historyMs * progress;
+            Vec2 point{};
+            ImVec2 screen{};
+            if (!ProjectilePosition(projectile, sampleTime, point) ||
+                !Project(matrix, point, screen)) {
+                havePrevious = false;
+                continue;
+            }
+
+            const int alpha = static_cast<int>(18.0f + 172.0f * progress * progress);
+            const ImU32 color = aoe
+                ? IM_COL32(255, 82, 94, alpha)
+                : IM_COL32(92, 204, 255, alpha);
+            if (havePrevious) {
+                const float thickness = g_cfg.projectileBreadcrumbThickness *
+                    (0.55f + 0.45f * progress);
+                draw->AddLine(previousScreen, screen, color, thickness);
+            }
+            if ((i % 4) == 0 && i < kBreadcrumbSegments)
+                draw->AddCircleFilled(screen,
+                                      0.65f + progress * 0.85f, color, 8);
+            previousScreen = screen;
+            havePrevious = true;
+        }
+    }
+
     if (!g_cfg.renderAoeDebug) return;
 
     ImVec2 previousScreen{};
@@ -152,20 +174,47 @@ void DrawProjectile(ImDrawList* draw, const Matrix& matrix, uintptr_t projectile
     }
 
     if (aoe && haveCurrent) {
-        draw->AddCircle(currentScreen, 12.0f, pointColor, 24, 2.0f);
-        draw->AddText(ImVec2(currentScreen.x + 8.0f, currentScreen.y - 18.0f),
-                      pointColor, "AOE");
+        Vec2 landing{};
+        ImVec2 landingScreen{};
+        if (ProjectilePosition(projectile, lifetime, landing) &&
+            Project(matrix, landing, landingScreen)) {
+            ImVec2 radiusScreen{};
+            const Vec2 radiusPoint{landing.x + g_cfg.aoeDebugRadius, landing.y};
+            float radiusPx = 12.0f;
+            if (Project(matrix, radiusPoint, radiusScreen))
+                radiusPx = std::clamp(std::fabs(radiusScreen.x - landingScreen.x),
+                                      6.0f, 360.0f);
+
+            draw->AddCircleFilled(landingScreen, radiusPx,
+                                  IM_COL32(255, 55, 70, 34), 48);
+            draw->AddCircle(landingScreen, radiusPx,
+                            IM_COL32(255, 76, 88, 220), 48, 2.0f);
+            draw->AddCircle(landingScreen, std::max(3.0f, radiusPx * 0.12f),
+                            IM_COL32(255, 220, 225, 245), 24, 1.5f);
+
+            char label[64]{};
+            const float remainingMs = std::max(
+                0.0f, static_cast<float>(startTick) + lifetime - gameTime);
+            if (g_cfg.aoeDebugCountdown)
+                std::snprintf(label, sizeof(label), "AOE %.2fs  r=%.2f",
+                              remainingMs / 1000.0f, g_cfg.aoeDebugRadius);
+            else
+                std::snprintf(label, sizeof(label), "AOE  r=%.2f",
+                              g_cfg.aoeDebugRadius);
+            draw->AddText(ImVec2(landingScreen.x + 8.0f,
+                                 landingScreen.y - radiusPx - 17.0f),
+                          pointColor, label);
+        }
     }
 }
 
 void TickGuarded() {
-    if ((!g_cfg.renderProjectiles && !g_cfg.renderAoeDebug) ||
+    if ((!g_cfg.renderProjectiles && !g_cfg.renderAoeDebug &&
+         !g_cfg.projectileBreadcrumbs) ||
         !overlay::Initialized())
         return;
 
-    const uintptr_t root = game::Root();
-    if (!SanePointer(root)) return;
-    const uintptr_t world = *reinterpret_cast<uintptr_t*>(root + 0x28);
+    const uintptr_t world = game::Root();
     if (!SanePointer(world)) return;
     const uintptr_t manager =
         *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_PROJECTILE_MANAGER);

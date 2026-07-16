@@ -50,7 +50,6 @@ struct Candidate {
     bool legal;
 };
 
-constexpr uintptr_t kProjectilePositionRva = 0x63CBA0;
 constexpr unsigned kNoThreatTime = 40000;
 constexpr float kTwoPi = 6.2831855f;
 constexpr float kCandidatePadding = 0.06f;
@@ -62,14 +61,7 @@ using ProjectilePositionFn =
     uint64_t(__fastcall*)(uintptr_t, float, float*, int*);
 
 bool Camera(Matrix& out) {
-    const uintptr_t root = game::Root();
-    const uintptr_t a = root ? *reinterpret_cast<uintptr_t*>(root + 0x30) : 0;
-    const uintptr_t b = a ? *reinterpret_cast<uintptr_t*>(a + 0x50) : 0;
-    const uintptr_t camera = b ? *reinterpret_cast<uintptr_t*>(b + 0x10) : 0;
-    if (!camera) return false;
-    for (int i = 0; i < 4; ++i)
-        std::memcpy(out.column[i], reinterpret_cast<void*>(camera + 0x2FC + 16 * i), 16);
-    return true;
+    return game::CameraMatrix(out.column);
 }
 
 bool Project(const Matrix& matrix, Vec2 point, ImVec2& out) {
@@ -93,7 +85,8 @@ bool Project(const Matrix& matrix, Vec2 point, ImVec2& out) {
 }
 
 bool ProjectilePosition(uintptr_t projectile, float futureMs, Vec2& out) {
-    auto fn = reinterpret_cast<ProjectilePositionFn>(ga::Rva(kProjectilePositionRva));
+    auto fn = reinterpret_cast<ProjectilePositionFn>(
+        ga::Rva(ga::rva::PROJECTILE_POSITION));
     if (!fn) return false;
     float scratch[4]{};
     int scratchInt[2]{};
@@ -105,8 +98,7 @@ bool ProjectilePosition(uintptr_t projectile, float futureMs, Vec2& out) {
 
 bool TileBlocked(Vec2 point) {
     if (point.x < 0.0f || point.y < 0.0f) return true;
-    const uintptr_t root = game::Root();
-    const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 0x28) : 0;
+    const uintptr_t world = game::Root();
     if (!world) return true;
     const uintptr_t squares =
         *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_TILE_GRID);
@@ -158,8 +150,7 @@ bool SegmentBlocked(Vec2 from, Vec2 to) {
 }
 
 void GatherThreats(std::vector<Threat>& threats, int gameTime) {
-    const uintptr_t root = game::Root();
-    const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 0x28) : 0;
+    const uintptr_t world = game::Root();
     const uintptr_t manager = world
         ? *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_PROJECTILE_MANAGER)
         : 0;
@@ -339,9 +330,8 @@ Candidate Choose(Vec2 center, int gameTime, const std::vector<Threat>& threats,
 
 void Tick() {
     if (!g_cfg.renderSafetyPath) return;
-    const uintptr_t root = game::Root();
+    const uintptr_t world = game::Root();
     const uintptr_t player = game::Player();
-    const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 0x28) : 0;
     if (!world || !player) return;
 
     Matrix matrix{};

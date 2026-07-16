@@ -104,6 +104,8 @@ void Config_Load() {
     CFG_INT(menuToggleHotkey);
     CFG_INT(menuTheme);
     CFG_BOOL(menuBackground);
+    CFG_BOOL(showBindsOverlay);
+    CFG_BOOL(notificationCenter); CFG_FLOAT(notificationDuration);
     CFG_BOOL(titleBarActive);
     CFG_BOOL(sideBarBackground);
     LoadColor("colorMenuBackground", g_cfg.colorMenuBackground);
@@ -118,19 +120,16 @@ void Config_Load() {
     CFG_BOOL(useSpeed1); CFG_BOOL(showCurrentSpeed); CFG_INT(speedHackHotkey);
     CFG_FLOAT(speedhackSpeed1); CFG_FLOAT(speedhackSpeed2); CFG_INT(speedToggleKey);
     CFG_BOOL(noFog); CFG_BOOL(socketFu); CFG_BOOL(showSocketFuTimer);
+    g_cfg.socketFuHotkey.vk = ReadInt("socketFuHotkey", g_cfg.socketFuHotkey.vk);
     CFG_BOOL(socketFuUseSecondSpeed); CFG_BOOL(socketFuRestrictMovement);
-    CFG_BOOL(socketFuNoClip); CFG_BOOL(autoNoClip); CFG_BOOL(antiIdle);
+    CFG_BOOL(socketFuNoClip); CFG_BOOL(autoNoClip); CFG_BOOL(noclipEnabled);
+    g_cfg.noclipHotkey.vk = ReadInt("noclipHotkey", g_cfg.noclipHotkey.vk);
+    CFG_BOOL(antiIdle);
     CFG_FLOAT(cameraZoomScale);
-    CFG_BOOL(lagPort);
-    g_cfg.lagPortHotkey.vk = ReadInt("lagPortHotkey", g_cfg.lagPortHotkey.vk);
-
-    CFG_BOOL(autoNexus); CFG_BOOL(autoNexusDisplay); CFG_FLOAT(autoNexusHpValue);
-    CFG_BOOL(autoNexusUsePercent); CFG_FLOAT(autoNexusHpPercent);
-    CFG_BOOL(detectServerHits);
-
     CFG_BOOL(autoAim); CFG_BOOL(magnetAim); CFG_BOOL(magnetRangeExt);
     CFG_INT(targetingStyle); CFG_FLOAT(magnetAimRange);
     CFG_BOOL(projectileNoClip); CFG_BOOL(renderAimInfo);
+    CFG_BOOL(renderMagnetRange); CFG_BOOL(renderNormalAimRange);
     g_cfg.aimbotHotkey.vk = ReadInt("aimbotHotkey", g_cfg.aimbotHotkey.vk);
 
     CFG_BOOL(autoDodge); CFG_BOOL(dodgeProjectiles); CFG_BOOL(dodgeHoldToToggle);
@@ -139,17 +138,22 @@ void Config_Load() {
     CFG_INT(dodgeMoveAwayMs); CFG_BOOL(dodgeAoeBombs); CFG_BOOL(dodgeAvoidUnits);
     CFG_FLOAT(dodgeUnitAvoidanceScale); CFG_FLOAT(dodgeKeepDistance);
     CFG_BOOL(oldDodgeLogic);
-    CFG_BOOL(teleportIfOutOfRange); CFG_BOOL(nexusWhenLost); CFG_FLOAT(dogeTeleportMax);
-    g_cfg.tpCaptureHotkey.vk = ReadInt("tpCaptureHotkey", g_cfg.tpCaptureHotkey.vk);
-    g_cfg.tpReturnHotkey.vk = ReadInt("tpReturnHotkey", g_cfg.tpReturnHotkey.vk);
-
     CFG_BOOL(enablePoisBags); CFG_BOOL(playSoundForBags);
     CFG_BOOL(bagEgg); CFG_BOOL(bagBrown); CFG_BOOL(bagPink); CFG_BOOL(bagPurple);
     CFG_BOOL(bagCyan); CFG_BOOL(bagDarkBlue); CFG_BOOL(bagWhite); CFG_BOOL(bagGold);
     CFG_BOOL(bagOrange); CFG_BOOL(bagRed);
-    CFG_BOOL(renderProjectiles); CFG_BOOL(renderAoeDebug); CFG_BOOL(renderTiles);
+    CFG_BOOL(renderProjectiles); CFG_BOOL(renderAoeDebug);
+    CFG_FLOAT(aoeDebugRadius); CFG_BOOL(aoeDebugCountdown);
+    CFG_BOOL(projectileBreadcrumbs); CFG_FLOAT(projectileBreadcrumbLifetime);
+    CFG_FLOAT(projectileBreadcrumbThickness); CFG_BOOL(renderTiles);
     CFG_BOOL(renderUnits); CFG_BOOL(renderHitbox); CFG_BOOL(renderGrid);
     CFG_BOOL(renderSafetyPath);
+    CFG_BOOL(interactiveMapEnabled); CFG_BOOL(mapShowNames);
+    CFG_BOOL(mapShowPortals); CFG_BOOL(mapShowRookie); CFG_BOOL(mapShowAdept);
+    CFG_BOOL(mapShowVeteran); CFG_FLOAT(interactiveMapZoom);
+    CFG_BOOL(menuSnow); CFG_FLOAT(menuSnowIntensity);
+    CFG_BOOL(menuAnimatedBorder); CFG_BOOL(menuCrownShimmer);
+    CFG_BOOL(menuCustomCrosshair); CFG_BOOL(menuCursorSnowTrail);
 
     CFG_BOOL(enableGlow); CFG_BOOL(rainbowGlow); CFG_INT(glowStyle);
     LoadColor("glowOutline", g_cfg.glowOutline);
@@ -171,9 +175,17 @@ void Config_Load() {
     g_cfg.menuToggleHotkey = std::clamp(g_cfg.menuToggleHotkey, 0, 0xFF);
     g_cfg.targetingStyle = std::clamp(g_cfg.targetingStyle, 0, 2);
     g_cfg.magnetAimRange = std::clamp(g_cfg.magnetAimRange, 1.0f, 2.25f);
-    g_cfg.autoNexusHpPercent = std::clamp(g_cfg.autoNexusHpPercent, 0.0f, 99.99f);
     g_cfg.starsValue = std::clamp(g_cfg.starsValue, 0, 100);
     g_cfg.guildRankValue = std::clamp(g_cfg.guildRankValue, 0, 4);
+    g_cfg.notificationDuration = std::clamp(g_cfg.notificationDuration, 1.5f, 10.0f);
+    g_cfg.interactiveMapZoom = std::clamp(g_cfg.interactiveMapZoom, 1.0f, 4.0f);
+    g_cfg.menuSnowIntensity = std::clamp(g_cfg.menuSnowIntensity, 0.15f, 1.5f);
+    g_cfg.projectileBreadcrumbLifetime =
+        std::clamp(g_cfg.projectileBreadcrumbLifetime, 0.15f, 2.0f);
+    g_cfg.projectileBreadcrumbThickness =
+        std::clamp(g_cfg.projectileBreadcrumbThickness, 0.5f, 4.0f);
+    g_cfg.aoeDebugRadius = std::clamp(g_cfg.aoeDebugRadius, 0.25f, 4.0f);
+    if (g_cfg.noclipHotkey.vk > 0xFF) g_cfg.noclipHotkey.vk = 0;
 }
 
 void Config_Save() {
@@ -181,7 +193,9 @@ void Config_Save() {
     WritePrivateProfileStringA("Client", nullptr, nullptr, s_path);
 
     SAVE_INT(menuToggleHotkey); SAVE_INT(menuTheme);
-    SAVE_BOOL(menuBackground); SAVE_BOOL(titleBarActive); SAVE_BOOL(sideBarBackground);
+    SAVE_BOOL(menuBackground); SAVE_BOOL(showBindsOverlay);
+    SAVE_BOOL(notificationCenter); SAVE_FLOAT(notificationDuration);
+    SAVE_BOOL(titleBarActive); SAVE_BOOL(sideBarBackground);
     SaveColor("colorMenuBackground", g_cfg.colorMenuBackground);
     SaveColor("colorTitleActive", g_cfg.colorTitleActive);
     SaveColor("colorSidebar", g_cfg.colorSidebar);
@@ -192,19 +206,16 @@ void Config_Save() {
     SAVE_BOOL(useSpeed1); SAVE_BOOL(showCurrentSpeed); SAVE_INT(speedHackHotkey);
     SAVE_FLOAT(speedhackSpeed1); SAVE_FLOAT(speedhackSpeed2); SAVE_INT(speedToggleKey);
     SAVE_BOOL(noFog); SAVE_BOOL(socketFu); SAVE_BOOL(showSocketFuTimer);
+    WriteInt("socketFuHotkey", g_cfg.socketFuHotkey.vk);
     SAVE_BOOL(socketFuUseSecondSpeed); SAVE_BOOL(socketFuRestrictMovement);
-    SAVE_BOOL(socketFuNoClip); SAVE_BOOL(autoNoClip); SAVE_BOOL(antiIdle);
+    SAVE_BOOL(socketFuNoClip); SAVE_BOOL(autoNoClip); SAVE_BOOL(noclipEnabled);
+    WriteInt("noclipHotkey", g_cfg.noclipHotkey.vk);
+    SAVE_BOOL(antiIdle);
     SAVE_FLOAT(cameraZoomScale);
-    SAVE_BOOL(lagPort);
-    WriteInt("lagPortHotkey", g_cfg.lagPortHotkey.vk);
-
-    SAVE_BOOL(autoNexus); SAVE_BOOL(autoNexusDisplay); SAVE_FLOAT(autoNexusHpValue);
-    SAVE_BOOL(autoNexusUsePercent); SAVE_FLOAT(autoNexusHpPercent);
-    SAVE_BOOL(detectServerHits);
-
     SAVE_BOOL(autoAim); SAVE_BOOL(magnetAim); SAVE_BOOL(magnetRangeExt);
     SAVE_INT(targetingStyle); SAVE_FLOAT(magnetAimRange);
     SAVE_BOOL(projectileNoClip); SAVE_BOOL(renderAimInfo);
+    SAVE_BOOL(renderMagnetRange); SAVE_BOOL(renderNormalAimRange);
     WriteInt("aimbotHotkey", g_cfg.aimbotHotkey.vk);
 
     SAVE_BOOL(autoDodge); SAVE_BOOL(dodgeProjectiles); SAVE_BOOL(dodgeHoldToToggle);
@@ -213,17 +224,22 @@ void Config_Save() {
     SAVE_INT(dodgeMoveAwayMs); SAVE_BOOL(dodgeAoeBombs); SAVE_BOOL(dodgeAvoidUnits);
     SAVE_FLOAT(dodgeUnitAvoidanceScale); SAVE_FLOAT(dodgeKeepDistance);
     SAVE_BOOL(oldDodgeLogic);
-    SAVE_BOOL(teleportIfOutOfRange); SAVE_BOOL(nexusWhenLost); SAVE_FLOAT(dogeTeleportMax);
-    WriteInt("tpCaptureHotkey", g_cfg.tpCaptureHotkey.vk);
-    WriteInt("tpReturnHotkey", g_cfg.tpReturnHotkey.vk);
-
     SAVE_BOOL(enablePoisBags); SAVE_BOOL(playSoundForBags);
     SAVE_BOOL(bagEgg); SAVE_BOOL(bagBrown); SAVE_BOOL(bagPink); SAVE_BOOL(bagPurple);
     SAVE_BOOL(bagCyan); SAVE_BOOL(bagDarkBlue); SAVE_BOOL(bagWhite); SAVE_BOOL(bagGold);
     SAVE_BOOL(bagOrange); SAVE_BOOL(bagRed);
-    SAVE_BOOL(renderProjectiles); SAVE_BOOL(renderAoeDebug); SAVE_BOOL(renderTiles);
+    SAVE_BOOL(renderProjectiles); SAVE_BOOL(renderAoeDebug);
+    SAVE_FLOAT(aoeDebugRadius); SAVE_BOOL(aoeDebugCountdown);
+    SAVE_BOOL(projectileBreadcrumbs); SAVE_FLOAT(projectileBreadcrumbLifetime);
+    SAVE_FLOAT(projectileBreadcrumbThickness); SAVE_BOOL(renderTiles);
     SAVE_BOOL(renderUnits); SAVE_BOOL(renderHitbox); SAVE_BOOL(renderGrid);
     SAVE_BOOL(renderSafetyPath);
+    SAVE_BOOL(interactiveMapEnabled); SAVE_BOOL(mapShowNames);
+    SAVE_BOOL(mapShowPortals); SAVE_BOOL(mapShowRookie); SAVE_BOOL(mapShowAdept);
+    SAVE_BOOL(mapShowVeteran); SAVE_FLOAT(interactiveMapZoom);
+    SAVE_BOOL(menuSnow); SAVE_FLOAT(menuSnowIntensity);
+    SAVE_BOOL(menuAnimatedBorder); SAVE_BOOL(menuCrownShimmer);
+    SAVE_BOOL(menuCustomCrosshair); SAVE_BOOL(menuCursorSnowTrail);
 
     SAVE_BOOL(enableGlow); SAVE_BOOL(rainbowGlow); SAVE_INT(glowStyle);
     SaveColor("glowOutline", g_cfg.glowOutline);

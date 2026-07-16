@@ -77,8 +77,7 @@ bool QueryTile(Vec2 point, TileInfo& out) {
     out = {};
     if (point.x < 0.0f || point.y < 0.0f) return false;
 
-    const uintptr_t root = game::Root();
-    const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
+    const uintptr_t world = game::Root();
     if (!world) return false;
 
     const uintptr_t squares =
@@ -174,8 +173,7 @@ uint64_t ReadConditions(uintptr_t object) {
 
 void SnapshotTargets(std::vector<Target>& targets) {
     targets.clear();
-    const uintptr_t root = game::Root();
-    const uintptr_t world = root ? *reinterpret_cast<uintptr_t*>(root + 40) : 0;
+    const uintptr_t world = game::Root();
     const uintptr_t manager = world
         ? *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_OBJECT_MANAGER)
         : 0;
@@ -191,13 +189,15 @@ void SnapshotTargets(std::vector<Target>& targets) {
         if (!object) continue;
 
         Target target{};
-        target.position.x = *reinterpret_cast<float*>(object + 0x3C);
-        target.position.y = *reinterpret_cast<float*>(object + 0x40);
-        target.hp = *reinterpret_cast<int*>(object + 0x20C);
-        target.invulnerable = *reinterpret_cast<uint8_t*>(object + 0x215) != 0;
+        target.position.x = *reinterpret_cast<float*>(object + ga::off::OBJECT_X);
+        target.position.y = *reinterpret_cast<float*>(object + ga::off::OBJECT_Y);
+        target.hp = *reinterpret_cast<int*>(object + ga::off::OBJECT_HEALTH);
+        target.invulnerable =
+            *reinterpret_cast<uint8_t*>(object + ga::off::OBJECT_INVULNERABLE) != 0;
         target.conditions = ReadConditions(object);
-        target.type = *reinterpret_cast<int*>(object + 0x30);
-        const uintptr_t status = *reinterpret_cast<uintptr_t*>(object + 0x18);
+        target.type = *reinterpret_cast<int*>(object + ga::off::OBJECT_TYPE);
+        const uintptr_t status =
+            *reinterpret_cast<uintptr_t*>(object + ga::off::OBJECT_STATUS);
         target.targetable =
             status && *reinterpret_cast<uint8_t*>(status + 1745) != 0;
         if (target.type == 20469 || target.type == 20464)
@@ -246,17 +246,10 @@ bool ReadProjectileInfo(uintptr_t player, ProjectileInfo& out) {
 }
 
 bool GetCamera(CameraMatrix& matrix) {
-    const uintptr_t root = game::Root();
-    const uintptr_t a = root ? *reinterpret_cast<uintptr_t*>(root + 48) : 0;
-    const uintptr_t b = a ? *reinterpret_cast<uintptr_t*>(a + 80) : 0;
-    const uintptr_t camera = b ? *reinterpret_cast<uintptr_t*>(b + 16) : 0;
-    if (!camera) return false;
-    for (int i = 0; i < 4; ++i)
-        std::memcpy(matrix.column[i], reinterpret_cast<void*>(camera + 764 + 16 * i), 16);
-    return true;
+    return game::CameraMatrix(matrix.column);
 }
 
-bool WorldToScreen(const CameraMatrix& m, Vec2 point, Vec2& screen) {
+bool ProjectWorld(const CameraMatrix& m, Vec2 point, Vec2& screen) {
     const float x = point.x;
     const float y = -point.y;
     const float w = m.column[0][3] * x + m.column[1][3] * y + m.column[3][3];
@@ -270,8 +263,83 @@ bool WorldToScreen(const CameraMatrix& m, Vec2 point, Vec2& screen) {
     const float clipY = m.column[0][1] * x + m.column[1][1] * y + m.column[3][1];
     screen.x = (clipX / w + 1.0f) * (static_cast<float>(width) * 0.5f);
     screen.y = (1.0f - clipY / w) * (static_cast<float>(height) * 0.5f);
+    return std::isfinite(screen.x) && std::isfinite(screen.y);
+}
+
+bool WorldToScreen(const CameraMatrix& m, Vec2 point, Vec2& screen) {
+    if (!ProjectWorld(m, point, screen)) return false;
+    const int width = static_cast<int>(kProjectionWidthScale * static_cast<float>(g_viewW));
+    const int height = g_viewH;
     return screen.x >= 0.0f && screen.x <= width &&
            screen.y >= 0.0f && screen.y <= height;
+}
+
+bool DrawRangeCircle(const CameraMatrix& camera, Vec2 center, float radius,
+                     ImU32 fill, ImU32 shadow, ImU32 outline) {
+    if (radius <= 0.05f) return false;
+
+    constexpr int kSegments = 96;
+    constexpr float kTwoPi = 6.28318530718f;
+    std::vector<ImVec2> points;
+    points.reserve(kSegments);
+    for (int i = 0; i < kSegments; ++i) {
+        const float angle = kTwoPi * static_cast<float>(i) /
+                            static_cast<float>(kSegments);
+        Vec2 screen{};
+        if (!ProjectWorld(camera,
+                {center.x + std::cos(angle) * radius,
+                 center.y + std::sin(angle) * radius}, screen))
+            return false;
+        points.emplace_back(screen.x, screen.y);
+    }
+
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    if ((fill & IM_COL32_A_MASK) != 0)
+        draw->AddConvexPolyFilled(points.data(), static_cast<int>(points.size()), fill);
+    draw->AddPolyline(points.data(), static_cast<int>(points.size()), shadow,
+                      ImDrawFlags_Closed, 3.0f);
+    draw->AddPolyline(points.data(), static_cast<int>(points.size()), outline,
+                      ImDrawFlags_Closed, 1.35f);
+    return true;
+}
+
+void DrawAimRanges() {
+    if (!ImGui::GetCurrentContext() || g_viewW <= 0 || g_viewH <= 0)
+        return;
+
+    const bool showMagnet = g_cfg.renderMagnetRange && g_cfg.magnetAim;
+    const bool showNormal = g_cfg.renderNormalAimRange && g_cfg.autoAim;
+    if (!showMagnet && !showNormal) return;
+
+    const uintptr_t player = game::Player();
+    if (!player) return;
+    const Vec2 center{*reinterpret_cast<float*>(player + ga::off::OBJECT_X),
+                      *reinterpret_cast<float*>(player + ga::off::OBJECT_Y)};
+    CameraMatrix camera{};
+    if (!GetCamera(camera)) return;
+
+    if (showNormal) {
+        ProjectileInfo projectile{};
+        if (ReadProjectileInfo(player, projectile)) {
+            const float speedPerMs =
+                (static_cast<float>(projectile.speedTenths) / 10.0f) / 1000.0f;
+            const float normalRadius = std::clamp(
+                speedPerMs * (projectile.lifetimeMs + 200.0f), 0.1f, 40.0f);
+            DrawRangeCircle(camera, center, normalRadius,
+                            IM_COL32(76, 181, 225, 8),
+                            IM_COL32(5, 18, 24, 175),
+                            IM_COL32(92, 203, 245, 205));
+        }
+    }
+
+    if (showMagnet) {
+        const float magnetRadius =
+            std::clamp(g_cfg.magnetAimRange, 0.1f, 20.0f);
+        DrawRangeCircle(camera, center, magnetRadius,
+                        IM_COL32(139, 117, 230, 15),
+                        IM_COL32(17, 13, 31, 180),
+                        IM_COL32(164, 146, 244, 220));
+    }
 }
 
 uint8_t* g_cave = nullptr;
@@ -282,6 +350,11 @@ uint8_t g_backup[40]{};
 
 void SetAutoAimPatch(bool enable) {
     if (enable == g_patchEnabled) return;
+    if (!ga::rva::AIM_POINT_PATCH) {
+        if (enable)
+            DBLOG("SetAutoAimPatch: no verified patch site for this build");
+        return;
+    }
     auto* site = static_cast<uint8_t*>(ga::Rva(ga::rva::AIM_POINT_PATCH));
     DBLOG("SetAutoAimPatch: enable=%d site=%p (GA+0x%llX)", (int)enable, (void*)site,
           (unsigned long long)ga::rva::AIM_POINT_PATCH);
@@ -289,6 +362,17 @@ void SetAutoAimPatch(bool enable) {
 
     DWORD oldProtection = 0;
     if (enable) {
+        static constexpr uint8_t kExpected[27] = {
+            0xF3,0x44,0x0F,0x58,0x4B,0x3C,
+            0xF3,0x44,0x0F,0x59,0xD0,
+            0xF3,0x44,0x0F,0x58,0x53,0x40,
+            0xF3,0x44,0x0F,0x58,0xC9,
+            0xF3,0x44,0x0F,0x58,0xD6,
+        };
+        if (std::memcmp(site, kExpected, sizeof(kExpected)) != 0) {
+            DBLOG("SetAutoAimPatch: byte signature mismatch; patch refused");
+            return;
+        }
         if (!g_cave) {
             g_cave = static_cast<uint8_t*>(
                 VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
@@ -326,14 +410,16 @@ void SetAutoAimPatch(bool enable) {
     g_patchEnabled = enable;
 }
 
-using AimFn = int64_t(__fastcall*)(uintptr_t, float);
+using AimFn = void(__fastcall*)(uintptr_t, float, uintptr_t);
 AimFn g_originalAim = nullptr;
 
-int64_t __fastcall HookAim(uintptr_t self, float inputAngle) {
+void __fastcall HookAim(uintptr_t self, float inputAngle, uintptr_t methodInfo) {
     static bool once = false;
     if (!once) { once = true; DBLOG("HookAim: first call self=%p angle=%.3f", (void*)self, inputAngle); }
-    if ((!g_cfg.autoAim && !g_cfg.magnetAim) || !game::Player())
-        return g_originalAim ? g_originalAim(self, inputAngle) : 0;
+    if ((!g_cfg.autoAim && !g_cfg.magnetAim) || !game::Player()) {
+        if (g_originalAim) g_originalAim(self, inputAngle, methodInfo);
+        return;
+    }
 
     const uintptr_t player = game::Player();
     const Vec2 playerPosition{
@@ -341,7 +427,7 @@ int64_t __fastcall HookAim(uintptr_t self, float inputAngle) {
         *reinterpret_cast<float*>(player + 0x40),
     };
 
-    ProjectileInfo projectile;
+    ProjectileInfo projectile{};
     ReadProjectileInfo(player, projectile);
 
     std::vector<Target> targets;
@@ -363,7 +449,8 @@ int64_t __fastcall HookAim(uintptr_t self, float inputAngle) {
     for (const Target& target : targets) {
         if (!Eligible(target)) continue;
         float metric = 99999.0f;
-        if (g_cfg.targetingStyle == Config::TS_DISTANCE) {
+        if (g_cfg.targetingStyle == Config::TS_DISTANCE ||
+            (g_cfg.targetingStyle == Config::TS_CURSOR && !haveCamera)) {
             metric = Distance(target.position, playerPosition);
         } else if (g_cfg.targetingStyle == Config::TS_CURSOR) {
             Vec2 screen{};
@@ -378,9 +465,6 @@ int64_t __fastcall HookAim(uintptr_t self, float inputAngle) {
         }
     }
 
-    float outputAngle = inputAngle;
-    float remainingDistance =
-        best ? Distance(best->position, playerPosition) : 0.0f;
     if (g_aimPoint) {
         Vec2 output = playerPosition;
         if (best && g_cfg.magnetAim) {
@@ -390,7 +474,6 @@ int64_t __fastcall HookAim(uintptr_t self, float inputAngle) {
             };
             float distance = Distance(best->position, playerPosition);
             if (distance <= 0.0f) distance = 0.01f;
-            remainingDistance = distance;
             const Vec2 direction{delta.x / distance, delta.y / distance};
 
             Vec2 losStart = playerPosition;
@@ -402,9 +485,10 @@ int64_t __fastcall HookAim(uintptr_t self, float inputAngle) {
             }
 
             if (distance <= g_cfg.magnetAimRange) {
-                if (distance < kNearLosDistance || LineOfSight(playerPosition, losStart))
+                if (distance < kNearLosDistance ||
+                    LineOfSight(playerPosition, losStart)) {
                     output = best->position;
-                remainingDistance = 0.0f;
+                }
             } else {
                 const float speedPerMs =
                     (static_cast<float>(projectile.speedTenths) / 10.0f) / 1000.0f;
@@ -414,7 +498,6 @@ int64_t __fastcall HookAim(uintptr_t self, float inputAngle) {
                     LineOfSight(playerPosition, losStart)) {
                     output.x = playerPosition.x + direction.x * g_cfg.magnetAimRange;
                     output.y = playerPosition.y + direction.y * g_cfg.magnetAimRange;
-                    remainingDistance = distance - g_cfg.magnetAimRange;
                 }
             }
         }
@@ -422,39 +505,47 @@ int64_t __fastcall HookAim(uintptr_t self, float inputAngle) {
         g_aimPoint[1] = output.y;
     }
 
-    if (best && g_cfg.autoAim) {
-        const float speedPerMs =
-            (static_cast<float>(projectile.speedTenths) / 10.0f) / 1000.0f;
-        if (speedPerMs > 0.0f &&
-            projectile.lifetimeMs + 200.0f > remainingDistance / speedPerMs) {
-            outputAngle = std::atan2(
-                best->position.y - playerPosition.y,
-                best->position.x - playerPosition.x);
-        }
+    float outputAngle = inputAngle;
+    if (best && (g_cfg.autoAim || g_cfg.magnetAim)) {
+        outputAngle = std::atan2(
+            best->position.y - playerPosition.y,
+            best->position.x - playerPosition.x);
     }
 
-    return g_originalAim ? g_originalAim(self, outputAngle) : 0;
+    static int debugShots = 0;
+    if (debugShots < 8) {
+        ++debugShots;
+        DBLOG("HookAim: shot=%d targets=%llu best=%p style=%d camera=%d input=%.3f output=%.3f",
+              debugShots, (unsigned long long)targets.size(), (const void*)best,
+              g_cfg.targetingStyle, (int)haveCamera, inputAngle, outputAngle);
+    }
+
+    if (g_originalAim) g_originalAim(self, outputAngle, methodInfo);
 }
 
 }
 
 void Install() {
     void* target = ga::Rva(ga::rva::SHOT_UPDATE);
-    DBLOG("aim::Install: aim-hook target=%p (GA+0x%llX)", target,
+    DBLOG("aim::Install: shot target=%p (GA+0x%llX)", target,
           (unsigned long long)ga::rva::SHOT_UPDATE);
-    if (target) {
-        MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void*>(&HookAim),
-                      reinterpret_cast<void**>(&g_originalAim));
-        DBLOG("aim::Install: MH_CreateHook=%d orig=%p", (int)st, (void*)g_originalAim);
-    }
+    if (!target) return;
+    const MH_STATUS st = MH_CreateHook(
+        target, reinterpret_cast<void*>(&HookAim),
+        reinterpret_cast<void**>(&g_originalAim));
+    DBLOG("aim::Install: MH_CreateHook=%d orig=%p", (int)st,
+          (void*)g_originalAim);
 }
 
 void Tick() {
     static bool wasDown = false;
     const bool down = g_cfg.aimbotHotkey.Pressed();
-    if (down && !wasDown) g_cfg.autoAim = !g_cfg.autoAim;
+    if (down && !wasDown) g_cfg.magnetAim = !g_cfg.magnetAim;
     wasDown = down;
-    SetAutoAimPatch(g_cfg.autoAim);
+    // 0x7D8AD1 is the verified start of the 27-byte world-space aim-point
+    // calculation that produces xmm9/xmm10 immediately before projectile setup.
+    SetAutoAimPatch(g_cfg.magnetAim);
+    DrawAimRanges();
 }
 
 }

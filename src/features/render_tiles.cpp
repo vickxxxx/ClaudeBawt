@@ -57,14 +57,7 @@ bool Read(uintptr_t address, T& out) {
 }
 
 bool Camera(Matrix& out) {
-    uintptr_t root = game::Root(), a = 0, b = 0, camera = 0;
-    if (!root || !Read(root + 0x30, a) || !a ||
-        !Read(a + 0x50, b) || !b || !Read(b + 0x10, camera) || !camera)
-        return false;
-    return Read(camera + 0x2FC, out.c[0]) &&
-           Read(camera + 0x30C, out.c[1]) &&
-           Read(camera + 0x31C, out.c[2]) &&
-           Read(camera + 0x32C, out.c[3]);
+    return game::CameraMatrix(out.c);
 }
 
 bool Project(const Matrix& m, float x, float y, ImVec2& out) {
@@ -119,11 +112,11 @@ void Tick() {
     if (!g_cfg.renderTiles || !ImGui::GetCurrentContext())
         return;
 
-    uintptr_t root = game::Root(), world = 0, squares = 0;
+    uintptr_t world = game::Root(), squares = 0;
     uintptr_t player = game::Player();
     int width = 0, height = 0;
     float px = 0.0f, py = 0.0f;
-    if (!root || !player || !Read(root + 0x28, world) || !world ||
+    if (!world || !player ||
         !Read(world + ga::off::WORLD_TILE_GRID, squares) || !squares ||
         !Read(world + ga::off::WORLD_MAP_WIDTH, width) ||
         !Read(world + ga::off::WORLD_MAP_HEIGHT, height) ||

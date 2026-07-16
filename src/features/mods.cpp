@@ -16,7 +16,7 @@ namespace {
 
 
 constexpr uintptr_t kAntiIdleRva   = 0xA91300;
-constexpr uintptr_t kCameraZoomRva = 0xF387C0;
+constexpr uintptr_t kCameraZoomRva = 0xE8D260; //0xF387C0;OLD
 constexpr float kZoomMin = 0.01f;
 constexpr float kZoomMax = 4.0f;
 
@@ -44,23 +44,8 @@ int64_t __fastcall hkCameraZoom(uintptr_t self, float zoom, uintptr_t a2, uintpt
 }
 
 void Install() {
-    void* ai = ga::Rva(kAntiIdleRva);
-    DBLOG("mods::Install: anti-idle target=%p (GA+0x%llX)", ai,
-          (unsigned long long)kAntiIdleRva);
-    if (ai) {
-        const MH_STATUS st = MH_CreateHook(ai, reinterpret_cast<void*>(&hkAntiIdle),
-                                           reinterpret_cast<void**>(&g_origAntiIdle));
-        DBLOG("mods::Install: anti-idle MH_CreateHook=%d", (int)st);
-    }
-
-    void* cz = ga::Rva(kCameraZoomRva);
-    DBLOG("mods::Install: camera-zoom target=%p (GA+0x%llX)", cz,
-          (unsigned long long)kCameraZoomRva);
-    if (cz) {
-        const MH_STATUS st = MH_CreateHook(cz, reinterpret_cast<void*>(&hkCameraZoom),
-                                           reinterpret_cast<void**>(&g_origZoom));
-        DBLOG("mods::Install: camera-zoom MH_CreateHook=%d", (int)st);
-    }
+    // Disabled until both targets and native signatures are verified for this build.
+    DBLOG("mods::Install: anti-idle and camera-zoom hooks disabled");
 }
 
 void Tick() {}

@@ -24,23 +24,7 @@ struct Matrix {
 };
 
 bool Camera(Matrix& out) {
-    uintptr_t root = game::Root();
-    if (!root)
-        return false;
-    uintptr_t a = *reinterpret_cast<uintptr_t*>(root + 0x30);
-    if (!a)
-        return false;
-    uintptr_t b = *reinterpret_cast<uintptr_t*>(a + 0x50);
-    if (!b)
-        return false;
-    uintptr_t camera = *reinterpret_cast<uintptr_t*>(b + 0x10);
-    if (!camera)
-        return false;
-    memcpy(out.c0, reinterpret_cast<void*>(camera + 0x2FC), 16);
-    memcpy(out.c1, reinterpret_cast<void*>(camera + 0x30C), 16);
-    memcpy(out.c2, reinterpret_cast<void*>(camera + 0x31C), 16);
-    memcpy(out.c3, reinterpret_cast<void*>(camera + 0x32C), 16);
-    return true;
+    return game::CameraMatrix(reinterpret_cast<float (*)[4]>(&out));
 }
 
 bool Project(const Matrix& m, float x, float y, ImVec2& out) {
@@ -88,12 +72,9 @@ void Tick() {
     if (!g_cfg.enablePoisBags)
         return;
 
-    uintptr_t root = game::Root();
+    uintptr_t world = game::Root();
     uintptr_t player = game::Player();
-    if (!root || !player)
-        return;
-    uintptr_t world = *reinterpret_cast<uintptr_t*>(root + 0x28);
-    if (!world)
+    if (!world || !player)
         return;
     uintptr_t owner =
         *reinterpret_cast<uintptr_t*>(world + ga::off::WORLD_OBJECT_MANAGER);

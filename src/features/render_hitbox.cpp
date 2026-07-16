@@ -21,22 +21,7 @@ struct CameraMatrix {
 };
 
 bool GetCamera(CameraMatrix& matrix) {
-    const uintptr_t root = game::Root();
-    const uintptr_t cameraOwner =
-        root ? *reinterpret_cast<uintptr_t*>(root + 0x30) : 0;
-    const uintptr_t cameraContainer =
-        cameraOwner ? *reinterpret_cast<uintptr_t*>(cameraOwner + 0x50) : 0;
-    const uintptr_t camera =
-        cameraContainer ? *reinterpret_cast<uintptr_t*>(cameraContainer + 0x10) : 0;
-    if (!camera)
-        return false;
-
-    for (int i = 0; i < 4; ++i) {
-        std::memcpy(matrix.column[i],
-                    reinterpret_cast<const void*>(camera + 0x2FC + 0x10 * i),
-                    sizeof(matrix.column[i]));
-    }
-    return true;
+    return game::CameraMatrix(matrix.column);
 }
 
 bool Project(const CameraMatrix& matrix, float worldX, float worldY,

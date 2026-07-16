@@ -4,87 +4,62 @@
 #include "MinHook.h"
 
 namespace features {
-    void InstallAll() {
-        DBLOG("InstallAll: MH_Initialize");
-        MH_Initialize();
-        DBLOG("InstallAll: InstallRootCapture");
-        game::InstallRootCapture();
-        DBLOG("InstallAll: InstallGameTick");
-        game::InstallGameTick();
-        DBLOG("InstallAll: aim::Install");
-        aim::Install();
-        DBLOG("InstallAll: dodge::Install");
-        dodge::Install();
-        DBLOG("InstallAll: nexus::Install");
-        nexus::Install();
-        DBLOG("InstallAll: speedhack::Install");
-        speedhack::Install();
-        DBLOG("InstallAll: loot::Install");
-        loot::Install();
-        DBLOG("InstallAll: glow::Install");
-        glow::Install();
-        DBLOG("InstallAll: fame::Install");
-        fame::Install();
-        DBLOG("InstallAll: noclip::Install");
-        noclip::Install();
-        DBLOG("InstallAll: mods::Install");
-        mods::Install();
-        DBLOG("InstallAll: socketfu::Install");
-        socketfu::Install();
-        DBLOG("InstallAll: lagport::Install");
-        lagport::Install();
-        DBLOG("InstallAll: render_projectiles::Install");
-        render_projectiles::Install();
-        DBLOG("InstallAll: MH_EnableHook(ALL)");
-        MH_STATUS st = MH_EnableHook(MH_ALL_HOOKS);
-        DBLOG("InstallAll: MH_EnableHook returned %d", (int)st);
+
+void InstallAll() {
+    DBLOG("InstallAll: streamlined menu");
+    const MH_STATUS init = MH_Initialize();
+    DBLOG("InstallAll: MH_Initialize=%d", (int)init);
+
+    game::InstallRootCapture();
+    game::InstallGameTick();
+
+    aim::Install();
+    dodge::Install();
+    speedhack::Install();
+    loot::Install();
+    glow::Install();
+    fame::Install();
+    noclip::Install();
+    socketfu::Install();
+    render_projectiles::Install();
+
+    const MH_STATUS enable = MH_EnableHook(MH_ALL_HOOKS);
+    DBLOG("InstallAll: MH_EnableHook=%d", (int)enable);
+}
+
+void Tick() {
+    static bool firstTick = true;
+#define FEATURE_TICK(label, call) \
+    do { if (firstTick) DBLOG("Tick#1: " label); call; } while (0)
+
+    FEATURE_TICK("aim", aim::Tick());
+    FEATURE_TICK("dodge", dodge::Tick());
+    FEATURE_TICK("speedhack", speedhack::Tick());
+    FEATURE_TICK("loot", loot::Tick());
+    FEATURE_TICK("glow", glow::Tick());
+    FEATURE_TICK("fame", fame::Tick());
+    FEATURE_TICK("noclip", noclip::Tick());
+    FEATURE_TICK("hud", hud::Tick());
+    FEATURE_TICK("socketfu", socketfu::Tick());
+    FEATURE_TICK("projectiles/aoe", render_projectiles::Tick());
+    FEATURE_TICK("tiles", render_tiles::Tick());
+    FEATURE_TICK("hitbox", render_hitbox::Tick());
+    FEATURE_TICK("safety", render_safety::Tick());
+    FEATURE_TICK("units/grid", render_units_grid::Tick());
+    FEATURE_TICK("binds overlay", binds_overlay::Tick());
+    FEATURE_TICK("notifications", notifications::Tick());
+    FEATURE_TICK("interactive map", interactive_map::Tick());
+
+#undef FEATURE_TICK
+    if (firstTick) {
+        DBLOG("Tick#1: complete");
+        firstTick = false;
     }
-    void Tick() {
+}
 
+void GameTick() {
+    noclip::Poll();
+    fame::Poll();
+}
 
-        static bool firstTick = true;
-        if (firstTick) DBLOG("Tick#1: aim");
-        aim::Tick();
-        if (firstTick) DBLOG("Tick#1: dodge");
-        dodge::Tick();
-        if (firstTick) DBLOG("Tick#1: nexus");
-        nexus::Tick();
-        if (firstTick) DBLOG("Tick#1: speedhack");
-        speedhack::Tick();
-        if (firstTick) DBLOG("Tick#1: loot");
-        loot::Tick();
-        if (firstTick) DBLOG("Tick#1: glow");
-        glow::Tick();
-        if (firstTick) DBLOG("Tick#1: fame");
-        fame::Tick();
-        if (firstTick) DBLOG("Tick#1: noclip");
-        noclip::Tick();
-        if (firstTick) DBLOG("Tick#1: mods");
-        mods::Tick();
-        if (firstTick) DBLOG("Tick#1: hud");
-        hud::Tick();
-        if (firstTick) DBLOG("Tick#1: socketfu");
-        socketfu::Tick();
-        if (firstTick) DBLOG("Tick#1: lagport");
-        lagport::Tick();
-        if (firstTick) DBLOG("Tick#1: render projectiles/aoe");
-        render_projectiles::Tick();
-        if (firstTick) DBLOG("Tick#1: render tiles");
-        render_tiles::Tick();
-        if (firstTick) DBLOG("Tick#1: render hitbox");
-        render_hitbox::Tick();
-        if (firstTick) DBLOG("Tick#1: render safety");
-        render_safety::Tick();
-        if (firstTick) DBLOG("Tick#1: render units/grid");
-        render_units_grid::Tick();
-        if (firstTick) { DBLOG("Tick#1: complete"); firstTick = false; }
-    }
-
-
-    void GameTick() {
-        nexus::Poll();
-        noclip::Poll();
-        fame::Poll();
-        teleport::Poll();
-    }
 }

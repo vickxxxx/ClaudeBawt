@@ -25,10 +25,11 @@ namespace ga {
 
 namespace features { void GameTick(); }
 namespace noclip   { bool GateActive(); }
-namespace lagport  { bool FreezeActive(); }
 
 namespace game {
     static std::atomic<uintptr_t> g_root{0};
+    static std::atomic<uintptr_t> g_player{0};
+    static std::atomic<uintptr_t> g_application{0};
     static std::atomic<bool> g_rootCaptureInstalled{false};
     static std::atomic<bool> g_gameTickInstalled{false};
 
@@ -37,15 +38,46 @@ namespace game {
 
         g_root.store(world, std::memory_order_release);
     }
-    void ResetRuntimeState() { CaptureRoot(0); }
+    void ResetRuntimeState() {
+        g_application.store(0, std::memory_order_release);
+        CaptureRoot(0);
+        CapturePlayer(0);
+    }
 
 
     uintptr_t Player() {
-        const uintptr_t root = Root();
-        if (!root) return 0;
-        uintptr_t a = *reinterpret_cast<uintptr_t*>(root + 0x28);
-        if (!a) return 0;
-        return *reinterpret_cast<uintptr_t*>(a + 0x48);
+        return g_player.load(std::memory_order_acquire);
+    }
+
+    void CapturePlayer(uintptr_t player) {
+        g_player.store(player, std::memory_order_release);
+    }
+
+    bool CameraMatrix(float out[4][4]) {
+        if (!out)
+            return false;
+        const uintptr_t application =
+            g_application.load(std::memory_order_acquire);
+        if (application <= 0xFFFF)
+            return false;
+#if defined(_MSC_VER)
+        __try {
+#endif
+            const uintptr_t manager =
+                *reinterpret_cast<const uintptr_t*>(application + 0x80);
+            if (manager <= 0xFFFF)
+                return false;
+            using Fn = void*(__fastcall*)(void*, uintptr_t, uintptr_t);
+            const auto fn = reinterpret_cast<Fn>(ga::Rva(ga::rva::CAMERA_MATRIX));
+            if (!fn)
+                return false;
+            fn(out, manager, 0);
+            return true;
+#if defined(_MSC_VER)
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return false;
+        }
+#endif
     }
 
     void MoveTo(uintptr_t player, float x, float y) {
@@ -59,29 +91,54 @@ namespace game {
     }
 
 
-    static uintptr_t (__fastcall* oWorldFn)(uintptr_t) = nullptr;
-    static uintptr_t __fastcall hkWorldFn(uintptr_t a1) {
+    using WorldFn = void(__fastcall*)(uintptr_t, uintptr_t, uintptr_t);
+    static WorldFn oWorldFn = nullptr;
+    static void __fastcall hkWorldFn(uintptr_t self, uintptr_t packet,
+                                     uintptr_t methodInfo) {
         static bool once = false;
         const bool first = !once;
-        if (first) { once = true; DBLOG("hkWorldFn: first call, root=%p, before orig=%p", (void*)a1, (void*)oWorldFn); }
-        CaptureRoot(a1);
-        uintptr_t r = oWorldFn ? oWorldFn(a1) : 0;
+        if (first) {
+            once = true;
+            DBLOG("hkWorldFn: first call, self=%p packet=%p before orig=%p",
+                  (void*)self, (void*)packet, (void*)oWorldFn);
+        }
+        CaptureRoot(self);
+        if (oWorldFn)
+            oWorldFn(self, packet, methodInfo);
         if (first) DBLOG("hkWorldFn: first call returned from orig");
-        return r;
+    }
+
+    using ApplicationUpdateFn = void(__fastcall*)(uintptr_t, uintptr_t);
+    static ApplicationUpdateFn oApplicationUpdate = nullptr;
+
+    static void __fastcall hkApplicationUpdate(uintptr_t self,
+                                                uintptr_t methodInfo) {
+        if (self > 0xFFFF) {
+            g_application.store(self, std::memory_order_release);
+            const uintptr_t world = *reinterpret_cast<uintptr_t*>(self + 0xC0);
+            CaptureRoot(world > 0xFFFF ? world : 0);
+            if (world > 0xFFFF) {
+                const uintptr_t player =
+                    *reinterpret_cast<uintptr_t*>(world + 0x48);
+                CapturePlayer(player > 0xFFFF ? player : 0);
+            }
+        }
+        if (oApplicationUpdate)
+            oApplicationUpdate(self, methodInfo);
     }
 
     void InstallRootCapture() {
-        if (g_rootCaptureInstalled.load(std::memory_order_acquire))
-            return;
-
-        void* target = ga::Rva(ga::rva::WORLD_CONTEXT_UPDATE);
-        DBLOG("InstallRootCapture: target=%p (GA+0x%llX)", target,
-              (unsigned long long)ga::rva::WORLD_CONTEXT_UPDATE);
+        CaptureRoot(0);
+        void* target = ga::Rva(ga::rva::APPLICATION_UPDATE);
+        DBLOG("InstallRootCapture: ApplicationManager::Update target=%p (GA+0x%llX)",
+              target, (unsigned long long)ga::rva::APPLICATION_UPDATE);
         if (!target)
             return;
-
-        const MH_STATUS status = MH_CreateHook(target, (void*)&hkWorldFn, (void**)&oWorldFn);
-        DBLOG("InstallRootCapture: MH_CreateHook=%d orig=%p", (int)status, (void*)oWorldFn);
+        const MH_STATUS status = MH_CreateHook(
+            target, reinterpret_cast<void*>(&hkApplicationUpdate),
+            reinterpret_cast<void**>(&oApplicationUpdate));
+        DBLOG("InstallRootCapture: MH_CreateHook=%d orig=%p", (int)status,
+              (void*)oApplicationUpdate);
         if (status == MH_OK)
             g_rootCaptureInstalled.store(true, std::memory_order_release);
     }
@@ -91,14 +148,18 @@ namespace game {
     }
 
 
-    static uintptr_t (__fastcall* oGameTick)(uintptr_t) = nullptr;
-    static uintptr_t __fastcall hkGameTick(uintptr_t a1) {
+    using GameTickFn = void(__fastcall*)(uintptr_t, uintptr_t);
+    static GameTickFn oGameTick = nullptr;
+    static void __fastcall hkGameTick(uintptr_t self, uintptr_t methodInfo) {
         static bool once = false;
-        if (!once) { once = true; DBLOG("hkGameTick: first call a1=%p", (void*)a1); }
+        if (!once) { once = true; DBLOG("hkGameTick: first call self=%p", (void*)self); }
         features::GameTick();
-        if (noclip::GateActive() || lagport::FreezeActive())
-            return 0;
-        return oGameTick ? oGameTick(a1) : 0;
+        // The original NoClip holds the surrounding world simulation while
+        // its movement predicates are overridden.
+        if (noclip::GateActive())
+            return;
+        if (oGameTick)
+            oGameTick(self, methodInfo);
     }
 
     void InstallGameTick() {
@@ -111,7 +172,8 @@ namespace game {
         if (!target)
             return;
 
-        const MH_STATUS status = MH_CreateHook(target, (void*)&hkGameTick, (void**)&oGameTick);
+        const MH_STATUS status = MH_CreateHook(target, (void*)&hkGameTick,
+                                               (void**)&oGameTick);
         DBLOG("InstallGameTick: MH_CreateHook=%d orig=%p", (int)status, (void*)oGameTick);
         if (status == MH_OK)
             g_gameTickInstalled.store(true, std::memory_order_release);

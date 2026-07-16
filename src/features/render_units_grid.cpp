@@ -53,17 +53,8 @@ bool Read(uintptr_t address, T& value) {
 }
 
 bool ReadCamera(uintptr_t root, Matrix& matrix) {
-    uintptr_t a = 0, b = 0, camera = 0;
-    if (!Read(root + 0x30, a) || !a ||
-        !Read(a + 0x50, b) || !b ||
-        !Read(b + 0x10, camera) || !camera)
-        return false;
-
-    for (int i = 0; i < 4; ++i) {
-        if (!Read(camera + 0x2FC + 16ull * i, matrix.column[i]))
-            return false;
-    }
-    return true;
+    (void)root;
+    return game::CameraMatrix(matrix.column);
 }
 
 bool Project(const Matrix& matrix, float worldX, float worldY, ImVec2& screen) {
@@ -92,11 +83,10 @@ bool Project(const Matrix& matrix, float worldX, float worldY, ImVec2& screen) {
     return std::isfinite(screen.x) && std::isfinite(screen.y);
 }
 
-bool SnapshotUnits(uintptr_t root, uintptr_t player, std::vector<Unit>& units) {
-    uintptr_t world = 0, manager = 0, list = 0;
+bool SnapshotUnits(uintptr_t world, uintptr_t player, std::vector<Unit>& units) {
+    uintptr_t manager = 0, list = 0;
     uint32_t count = 0;
-    if (!Read(root + 0x28, world) || !world ||
-        !Read(world + ga::off::WORLD_OBJECT_MANAGER, manager) || !manager ||
+    if (!world || !Read(world + ga::off::WORLD_OBJECT_MANAGER, manager) || !manager ||
         !Read(manager + 0x18, list) || !list ||
         !Read(list + 0x18, count) || count == 0 || count >= kMaxObjects)
         return false;
