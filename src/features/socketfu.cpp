@@ -1,19 +1,12 @@
-
-
-
 #include "features.h"
 #include "config.h"
 #include "il2cpp.h"
 #include "log.h"
 
 #include <windows.h>
-#include <intrin.h>
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
-#include <deque>
-#include <mutex>
-#include <vector>
 #include "imgui.h"
 #include "MinHook.h"
 
@@ -21,39 +14,61 @@ namespace socketfu {
 namespace {
 
 using SpeedFn = float(__fastcall*)(uintptr_t, uintptr_t);
-SpeedFn g_orig = nullptr;
+SpeedFn g_origSpeed = nullptr;
 
-using SendFn = void(__fastcall*)(uintptr_t, uintptr_t, uintptr_t);
-SendFn g_origSend = nullptr;
-using GcHandleNewFn = uint32_t(__cdecl*)(void*, bool);
-using GcHandleTargetFn = void*(__cdecl*)(uint32_t);
-using GcHandleFreeFn = void(__cdecl*)(uint32_t);
-using DomainGetFn = void*(__cdecl*)();
-using ThreadAttachFn = void*(__cdecl*)(void*);
-GcHandleNewFn g_gcNew = nullptr;
-GcHandleTargetFn g_gcTarget = nullptr;
-GcHandleFreeFn g_gcFree = nullptr;
-DomainGetFn g_domainGet = nullptr;
-ThreadAttachFn g_threadAttach = nullptr;
-thread_local void* g_attachedThread = nullptr;
+// JOEMEFDPIIP::AIPAABAADIN() processes exactly one item from the game's
+// Queue<IEnumerable<byte>> and dequeues it after scheduling the send.
+using QueuePumpFn = void(__fastcall*)(uintptr_t, uintptr_t);
+QueuePumpFn g_origQueuePump = nullptr;
 
-struct HeldShot {
-    uintptr_t socket = 0;
-    uintptr_t methodInfo = 0;
-    uint32_t handle = 0;
-};
-
-std::mutex g_shotMutex;
-std::deque<HeldShot> g_heldShots;
-constexpr size_t kMaxHeldShots = 4096;
-constexpr size_t kReleaseBatchSize = 4;
+using DomainGetFn = void* (*)();
+using DomainAssemblyOpenFn = void* (*)(void*, const char*);
+using AssemblyGetImageFn = void* (*)(void*);
+using ClassFromNameFn = void* (*)(void*, const char*, const char*);
+using ClassGetMethodFn = const void* (*)(void*, const char*, int);
+using MethodGetPointerFn = void* (*)(const void*);
 
 std::atomic<bool> g_active{false};
-constexpr uint8_t kShotPacketId = 30;                 // HJNFJAHAOOE
-constexpr uintptr_t kShotPacketCallerRva = 0x7D8FCB; // instruction after SendMessage call
-bool      g_prev = false;
-bool      g_hotkeyWasDown = false;
+bool g_prev = false;
+bool g_hotkeyWasDown = false;
 ULONGLONG g_sinceMs = 0;
+std::atomic<uint64_t> g_pumpCalls{0};
+std::atomic<uint64_t> g_blockedPumps{0};
+
+void* ResolveQueuePump() {
+    HMODULE game = GetModuleHandleA("GameAssembly.dll");
+    if (!game)
+        return nullptr;
+
+    const auto domainGet = reinterpret_cast<DomainGetFn>(
+        GetProcAddress(game, "il2cpp_domain_get"));
+    const auto assemblyOpen = reinterpret_cast<DomainAssemblyOpenFn>(
+        GetProcAddress(game, "il2cpp_domain_assembly_open"));
+    const auto assemblyGetImage = reinterpret_cast<AssemblyGetImageFn>(
+        GetProcAddress(game, "il2cpp_assembly_get_image"));
+    const auto classFromName = reinterpret_cast<ClassFromNameFn>(
+        GetProcAddress(game, "il2cpp_class_from_name"));
+    const auto classGetMethod = reinterpret_cast<ClassGetMethodFn>(
+        GetProcAddress(game, "il2cpp_class_get_method_from_name"));
+    const auto methodGetPointer = reinterpret_cast<MethodGetPointerFn>(
+        GetProcAddress(game, "il2cpp_method_get_pointer"));
+    if (!domainGet || !assemblyOpen || !assemblyGetImage || !classFromName ||
+        !classGetMethod)
+        return nullptr;
+
+    void* domain = domainGet();
+    void* assembly = domain ? assemblyOpen(domain, "Assembly-CSharp") : nullptr;
+    void* image = assembly ? assemblyGetImage(assembly) : nullptr;
+    void* klass = image ? classFromName(image, "", "JOEMEFDPIIP") : nullptr;
+    const void* method = klass
+        ? classGetMethod(klass, "AIPAABAADIN", 0)
+        : nullptr;
+    if (!method)
+        return nullptr;
+    return methodGetPointer
+        ? methodGetPointer(method)
+        : *reinterpret_cast<void* const*>(method);
+}
 
 bool HotkeyDown(const Keybind& bind) {
     int vk = bind.vk;
@@ -69,128 +84,62 @@ bool HotkeyDown(const Keybind& bind) {
     return vk > 0 && (GetAsyncKeyState(vk) & 0x8000) != 0;
 }
 
-
 float __fastcall hkMoveSpeed(uintptr_t self, uintptr_t methodInfo) {
-    float r = g_orig ? g_orig(self, methodInfo) : 0.0f;
-    if (g_active.load(std::memory_order_acquire) &&
-        g_cfg.socketFuRestrictMovement) {
-        const float mult = speedhack::CurrentSpeed();
-        if (mult > 1.5f)
-            r = (1.5f / mult) * r;
-    }
-    return r;
-}
-
-void FlushHeldShots(size_t maxShots) {
-    std::vector<HeldShot> shots;
-    {
-        std::lock_guard<std::mutex> lock(g_shotMutex);
-        const size_t count = (std::min)(maxShots, g_heldShots.size());
-        shots.reserve(count);
-        for (size_t i = 0; i < count; ++i) {
-            shots.push_back(g_heldShots.front());
-            g_heldShots.pop_front();
-        }
-    }
-
-    size_t sent = 0;
-    for (const HeldShot& held : shots) {
-        void* shot = g_gcTarget && held.handle
-            ? g_gcTarget(held.handle)
-            : nullptr;
-        if (shot && g_origSend) {
-            g_origSend(held.socket, reinterpret_cast<uintptr_t>(shot),
-                       held.methodInfo);
-            ++sent;
-        }
-        if (g_gcFree && held.handle)
-            g_gcFree(held.handle);
-    }
-
-    if (!shots.empty())
-        DBLOG("socketfu: released %llu/%llu held shots",
-              static_cast<unsigned long long>(sent),
-              static_cast<unsigned long long>(shots.size()));
-}
-
-void __fastcall hkSendMessage(uintptr_t self, uintptr_t packet,
-                              uintptr_t methodInfo) {
+    float result = g_origSpeed ? g_origSpeed(self, methodInfo) : 0.0f;
     if (g_active.load(std::memory_order_acquire)) {
-        if (packet > 0xFFFF) {
-            const auto caller = reinterpret_cast<uintptr_t>(_ReturnAddress());
-            const uintptr_t base = ga::Base();
-            const uintptr_t callerRva = base && caller >= base ? caller - base : 0;
-            const uint8_t packetId = *reinterpret_cast<const uint8_t*>(packet + 0x18);
-            if (packetId == kShotPacketId &&
-                callerRva == kShotPacketCallerRva && g_gcNew) {
-                // SendMessage runs on the socket worker, which is not always
-                // registered with IL2CPP's GC. Handle APIs crash on an
-                // unregistered native thread, so attach it once first.
-                if (!g_attachedThread && g_domainGet && g_threadAttach) {
-                    if (void* domain = g_domainGet())
-                        g_attachedThread = g_threadAttach(domain);
-                }
-                if (!g_attachedThread) {
-                    if (g_origSend)
-                        g_origSend(self, packet, methodInfo);
-                    return;
-                }
-                const uint32_t handle =
-                    g_gcNew(reinterpret_cast<void*>(packet), false);
-                if (handle) {
-                    std::lock_guard<std::mutex> lock(g_shotMutex);
-                    if (g_heldShots.size() < kMaxHeldShots) {
-                        g_heldShots.push_back({self, methodInfo, handle});
-                        return;
-                    }
-                    if (g_gcFree)
-                        g_gcFree(handle);
-                }
-            }
-        }
-    } else {
-        // Drain a small ordered batch on each normal send. Replaying the whole
-        // queue synchronously here can re-enter the socket pipeline dozens of
-        // times and crash the client.
-        FlushHeldShots(kReleaseBatchSize);
+        // The slider scales the client clock. Cancel that factor from the
+        // player's movement calculation so it changes game time/shot cadence,
+        // not movement speed.
+        const float clockFactor =
+            std::clamp(g_cfg.socketFuSpeedFactor, 1.0f, 3.0f);
+        if (clockFactor > 1.0f)
+            result /= clockFactor;
     }
-    if (g_origSend)
-        g_origSend(self, packet, methodInfo);
+    return result;
 }
 
+void __fastcall hkQueuePump(uintptr_t self, uintptr_t methodInfo) {
+    // Do not dequeue, serialize again, retain managed objects ourselves, or
+    // block this thread. The game's own queue keeps every encrypted frame in
+    // exact order while local movement and inbound processing continue.
+    const uint64_t call = g_pumpCalls.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (call == 1)
+        DBLOG("socketfu: live queue pump reached self=%p", (void*)self);
+    if (g_active.load(std::memory_order_acquire)) {
+        g_blockedPumps.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+
+    if (g_origQueuePump)
+        g_origQueuePump(self, methodInfo);
 }
+
+} // namespace
 
 void Install() {
-    if (HMODULE gaModule = GetModuleHandleA("GameAssembly.dll")) {
-        g_gcNew = reinterpret_cast<GcHandleNewFn>(
-            GetProcAddress(gaModule, "il2cpp_gchandle_new"));
-        g_gcTarget = reinterpret_cast<GcHandleTargetFn>(
-            GetProcAddress(gaModule, "il2cpp_gchandle_get_target"));
-        g_gcFree = reinterpret_cast<GcHandleFreeFn>(
-            GetProcAddress(gaModule, "il2cpp_gchandle_free"));
-        g_domainGet = reinterpret_cast<DomainGetFn>(
-            GetProcAddress(gaModule, "il2cpp_domain_get"));
-        g_threadAttach = reinterpret_cast<ThreadAttachFn>(
-            GetProcAddress(gaModule, "il2cpp_thread_attach"));
+    void* speedTarget = ga::Rva(ga::rva::SOCKETFU_MOVE_SPEED);
+    DBLOG("socketfu::Install: move-speed target=%p (GA+0x%llX)", speedTarget,
+          static_cast<unsigned long long>(ga::rva::SOCKETFU_MOVE_SPEED));
+    if (speedTarget) {
+        const MH_STATUS status = MH_CreateHook(
+            speedTarget, reinterpret_cast<void*>(&hkMoveSpeed),
+            reinterpret_cast<void**>(&g_origSpeed));
+        DBLOG("socketfu::Install: move-speed MH_CreateHook=%d", (int)status);
     }
 
-    void* target = ga::Rva(ga::rva::SOCKETFU_MOVE_SPEED);
-    DBLOG("socketfu::Install: move-speed target=%p (GA+0x%llX)", target,
-          (unsigned long long)ga::rva::SOCKETFU_MOVE_SPEED);
-    if (target) {
-        const MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void*>(&hkMoveSpeed),
-                                           reinterpret_cast<void**>(&g_orig));
-        DBLOG("socketfu::Install: MH_CreateHook=%d", (int)st);
-    }
-
-    void* sendTarget = ga::Rva(ga::rva::SOCKET_SEND);
-    DBLOG("socketfu::Install: send target=%p (GA+0x%llX)",
-          sendTarget, (unsigned long long)ga::rva::SOCKET_SEND);
-    if (sendTarget) {
-        const MH_STATUS st = MH_CreateHook(
-            sendTarget, reinterpret_cast<void*>(&hkSendMessage),
-            reinterpret_cast<void**>(&g_origSend));
-        DBLOG("socketfu::Install: send MH_CreateHook=%d", (int)st);
+    void* pumpTarget = ResolveQueuePump();
+    if (!pumpTarget)
+        pumpTarget = ga::Rva(ga::rva::SOCKET_QUEUE_PUMP);
+    const uintptr_t pumpRva = pumpTarget
+        ? reinterpret_cast<uintptr_t>(pumpTarget) - ga::Base()
+        : 0;
+    DBLOG("socketfu::Install: queue-pump target=%p (runtime GA+0x%llX)",
+          pumpTarget, static_cast<unsigned long long>(pumpRva));
+    if (pumpTarget) {
+        const MH_STATUS status = MH_CreateHook(
+            pumpTarget, reinterpret_cast<void*>(&hkQueuePump),
+            reinterpret_cast<void**>(&g_origQueuePump));
+        DBLOG("socketfu::Install: queue-pump MH_CreateHook=%d", (int)status);
     }
 }
 
@@ -199,40 +148,37 @@ void Tick() {
     if (!g_cfg.socketFuHotkey.listening && hotkeyDown && !g_hotkeyWasDown)
         g_cfg.socketFu = !g_cfg.socketFu;
     g_hotkeyWasDown = hotkeyDown;
-    const bool active = g_cfg.socketFu;
 
+    const bool active = g_cfg.socketFu;
+    g_active.store(active, std::memory_order_release);
 
     if (active && !g_prev) {
         g_sinceMs = GetTickCount64();
-        if (g_cfg.socketFuUseSecondSpeed)
-            g_cfg.useSpeed1 = false;
-        DBLOG("socketfu: ENGAGE");
+        g_pumpCalls.store(0, std::memory_order_relaxed);
+        g_blockedPumps.store(0, std::memory_order_relaxed);
+        DBLOG("socketfu: ENGAGE (outbound queue paused)");
     } else if (!active && g_prev) {
-        size_t held = 0;
-        {
-            std::lock_guard<std::mutex> lock(g_shotMutex);
-            held = g_heldShots.size();
-        }
-        DBLOG("socketfu: DISENGAGE (%llu held shots awaiting release)",
-              static_cast<unsigned long long>(held));
+        DBLOG("socketfu: DISENGAGE (normal ordered drain resumed; calls=%llu blocked=%llu)",
+              static_cast<unsigned long long>(
+                  g_pumpCalls.load(std::memory_order_relaxed)),
+              static_cast<unsigned long long>(
+                  g_blockedPumps.load(std::memory_order_relaxed)));
     }
     g_prev = active;
-    g_active.store(active, std::memory_order_release);
-
-
-    // Only PlayerShoot packets are held. Movement, heartbeat/ACK, abilities,
-    // chat and other protocol traffic continue normally.
 
     if (active && g_cfg.showSocketFuTimer) {
-        const double secs = static_cast<double>(GetTickCount64() - g_sinceMs) / 1000.0;
+        const double seconds =
+            static_cast<double>(GetTickCount64() - g_sinceMs) / 1000.0;
         ImGui::SetNextWindowBgAlpha(0.40f);
         ImGui::Begin("##client_socketfu", nullptr,
-                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
-                     ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings |
-                     ImGuiWindowFlags_NoFocusOnAppearing);
-        ImGui::Text("SocketFU: %.1f", secs);
+                     ImGuiWindowFlags_NoDecoration |
+                         ImGuiWindowFlags_AlwaysAutoResize |
+                         ImGuiWindowFlags_NoInputs |
+                         ImGuiWindowFlags_NoSavedSettings |
+                         ImGuiWindowFlags_NoFocusOnAppearing);
+        ImGui::Text("SocketFU: %.1f", seconds);
         ImGui::End();
     }
 }
 
-}
+} // namespace socketfu

@@ -64,7 +64,7 @@ void Tick() {
                  ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings |
                  ImGuiWindowFlags_NoFocusOnAppearing);
     if (showSpeed)
-        ImGui::Text("Speed: %.2f", speedhack::CurrentSpeed());
+        ImGui::Text("Game Time: %.2fx", speedhack::CurrentSpeed());
     if (showFpm)
         ImGui::Text("FPM: %.0f", g_fpm);
     ImGui::End();

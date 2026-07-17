@@ -120,6 +120,7 @@ void Config_Load() {
     CFG_BOOL(useSpeed1); CFG_BOOL(showCurrentSpeed); CFG_INT(speedHackHotkey);
     CFG_FLOAT(speedhackSpeed1); CFG_FLOAT(speedhackSpeed2); CFG_INT(speedToggleKey);
     CFG_BOOL(noFog); CFG_BOOL(socketFu); CFG_BOOL(showSocketFuTimer);
+    CFG_FLOAT(socketFuSpeedFactor);
     g_cfg.socketFuHotkey.vk = ReadInt("socketFuHotkey", g_cfg.socketFuHotkey.vk);
     CFG_BOOL(socketFuUseSecondSpeed); CFG_BOOL(socketFuRestrictMovement);
     CFG_BOOL(socketFuNoClip); CFG_BOOL(autoNoClip); CFG_BOOL(noclipEnabled);
@@ -175,6 +176,7 @@ void Config_Load() {
     g_cfg.menuToggleHotkey = std::clamp(g_cfg.menuToggleHotkey, 0, 0xFF);
     g_cfg.targetingStyle = std::clamp(g_cfg.targetingStyle, 0, 2);
     g_cfg.magnetAimRange = std::clamp(g_cfg.magnetAimRange, 1.0f, 2.25f);
+    g_cfg.socketFuSpeedFactor = std::clamp(g_cfg.socketFuSpeedFactor, 1.0f, 3.0f);
     g_cfg.starsValue = std::clamp(g_cfg.starsValue, 0, 100);
     g_cfg.guildRankValue = std::clamp(g_cfg.guildRankValue, 0, 4);
     g_cfg.notificationDuration = std::clamp(g_cfg.notificationDuration, 1.5f, 10.0f);
@@ -206,6 +208,7 @@ void Config_Save() {
     SAVE_BOOL(useSpeed1); SAVE_BOOL(showCurrentSpeed); SAVE_INT(speedHackHotkey);
     SAVE_FLOAT(speedhackSpeed1); SAVE_FLOAT(speedhackSpeed2); SAVE_INT(speedToggleKey);
     SAVE_BOOL(noFog); SAVE_BOOL(socketFu); SAVE_BOOL(showSocketFuTimer);
+    SAVE_FLOAT(socketFuSpeedFactor);
     WriteInt("socketFuHotkey", g_cfg.socketFuHotkey.vk);
     SAVE_BOOL(socketFuUseSecondSpeed); SAVE_BOOL(socketFuRestrictMovement);
     SAVE_BOOL(socketFuNoClip); SAVE_BOOL(autoNoClip); SAVE_BOOL(noclipEnabled);

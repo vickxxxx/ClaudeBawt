@@ -59,10 +59,10 @@ struct TileInfo {
 };
 
 
-constexpr uintptr_t kMoveUpdateRva = 0x7CC950; // 2026-07-16 CJCEGCEMIGE(float, float)
-constexpr uintptr_t kMoveSpeedRva = 0x7D0EE0; // 2026-07-16 GAFGPNKFMOJ()
+constexpr uintptr_t kMoveUpdateRva = 0x14F79F0; // 2026-07-17 native signature: CJCEGCEMIGE(float, float)
+constexpr uintptr_t kMoveSpeedRva = 0x14FCA00; // 2026-07-17 native signature: GAFGPNKFMOJ()
 
-constexpr uintptr_t kPlayerUpdateRva = 0x7D1D50; // 2026-07-16 GJFKGLJEGKO(int, int)
+constexpr uintptr_t kPlayerUpdateRva = 0x14FE560; // 2026-07-17 native signature: GJFKGLJEGKO(int, int)
 constexpr uintptr_t kCollisionRadiusMultiplierOffset = 0x788; // ObjectProperties::collisionRadiusMultiplier
 
 

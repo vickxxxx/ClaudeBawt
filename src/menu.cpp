@@ -375,8 +375,9 @@ namespace menu {
             LabelHotkey("Toggle Key", "socketFuHotkey", g_cfg.socketFuHotkey);
             ImGui::TextDisabled("Keeps the world and local movement running normally.");
             ImGui::Checkbox("Show SocketFu Timer", &g_cfg.showSocketFuTimer);
-            ImGui::Checkbox("Use Second Speed in SocketFu", &g_cfg.socketFuUseSecondSpeed);
-            ImGui::Checkbox("Restrict My Movement Speed in SocketFu", &g_cfg.socketFuRestrictMovement);
+            ImGui::SliderFloat("Game Time Factor", &g_cfg.socketFuSpeedFactor,
+                               1.0f, 3.0f, "%.3f");
+            ImGui::TextDisabled("Character movement remains at normal speed.");
             ImGui::TextDisabled("SocketFU remains installed; the old Mods page has been removed.");
         }
 

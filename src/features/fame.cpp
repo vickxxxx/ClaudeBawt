@@ -15,8 +15,12 @@
 namespace fame {
 namespace {
 
-constexpr uintptr_t kStatsUpdateRva = 0xC2CCF0;
-constexpr uintptr_t kFameWritePatchRva = 0x365E2F;
+// The old native stats hook and fame-write patch cannot be migrated safely
+// from metadata v31 alone.  Their former RVAs now point at unrelated code in
+// the 2026-07-17 image, so keep them disabled until each native body has been
+// identified by a unique signature.
+constexpr uintptr_t kStatsUpdateRva = 0;
+constexpr uintptr_t kFameWritePatchRva = 0;
 
 using StatsUpdateFn = int64_t (__fastcall*)(uintptr_t, uintptr_t);
 StatsUpdateFn oStatsUpdate = nullptr;
@@ -242,6 +246,10 @@ int64_t __fastcall hkStatsUpdate(uintptr_t self, uintptr_t packet) {
 void SetFamePatch(bool enable) {
     if (enable == g_patchEnabled)
         return;
+    if (!kFameWritePatchRva) {
+        g_patchEnabled = false;
+        return;
+    }
     uint8_t* site = static_cast<uint8_t*>(ga::Rva(kFameWritePatchRva));
     if (!site)
         return;
@@ -381,7 +389,7 @@ void Install() {
     DBLOG("name changer: CharacterInfo class=%p hooks=%d string_new=%p",
           characterInfoClass, characterHooks, (void*)il2cppStringNew);
 
-    void* target = ga::Rva(kStatsUpdateRva);
+    void* target = kStatsUpdateRva ? ga::Rva(kStatsUpdateRva) : nullptr;
     DBLOG("fame::Install stats target=%p (GA+0x%llX)", target,
           (unsigned long long)kStatsUpdateRva);
     if (target) {

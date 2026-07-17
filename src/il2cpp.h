@@ -18,19 +18,20 @@ namespace ga {
 
 
     namespace rva {
-        constexpr uintptr_t SHOT_UPDATE          = 0x7CB220;  // 2026-07-16 CDJLLHJOCNM(float)
-        constexpr uintptr_t MOVE_TO              = 0x7D0D90; // 2026-07-16 FOFMOMDBGGI(float, Vector2)
-        constexpr uintptr_t MOVEMENT_UPDATE      = 0x7CE690; // 2026-07-16 DKLEJEABOOO(...)
-        constexpr uintptr_t MOVE_SPEED           = 0x7D1960; // 2026-07-16 GGNFAIKKIEO()
-        constexpr uintptr_t SOCKETFU_MOVE_SPEED  = 0x7D0EE0; // 2026-07-16 GAFGPNKFMOJ(), migrated from 0x15E4940
-        constexpr uintptr_t SOCKET_SEND          = 0x4A72A0; // 2026-07-16 SocketManager::SendMessage(DCBCCBKEIHN)
-        constexpr uintptr_t MOVEMENT_FLAG_PATCH  = 0x49AA0C; // 2026-07-16 verified movzx ebx,[rsi+41h]
+        constexpr uintptr_t SHOT_UPDATE          = 0x14F62B0; // 2026-07-17 native signature: CDJLLHJOCNM(float)
+        constexpr uintptr_t MOVE_TO              = 0x14FC890; // 2026-07-17 native signature: FOFMOMDBGGI(float, Vector2)
+        constexpr uintptr_t MOVEMENT_UPDATE      = 0x14F9720; // 2026-07-17 native body match: DKLEJEABOOO(...)
+        constexpr uintptr_t MOVE_SPEED           = 0x14FE090; // 2026-07-17 native signature: GGNFAIKKIEO()
+        constexpr uintptr_t SOCKETFU_MOVE_SPEED  = 0x14FCA00; // 2026-07-17 native signature: GAFGPNKFMOJ()
+        constexpr uintptr_t SOCKET_SEND          = 0x1D8CF00; // 2026-07-17 native body + preceding-neighbor match
+        constexpr uintptr_t SOCKET_QUEUE_PUMP    = 0x198A330; // 2026-07-17 native body + JOEMEFDPIIP neighbor-cluster match
+        constexpr uintptr_t MOVEMENT_FLAG_PATCH  = 0x1D84C1C; // 2026-07-17 unique native signature: movzx ebx,[rsi+41h]
         constexpr uintptr_t WORLD_CONTEXT_UPDATE = 0x1AE8180; //0xEC82E0;OLD    0x1AE8180 50/50 might be 0x1AE40E0
-        constexpr uintptr_t APPLICATION_UPDATE   = 0x52AFF0; // 2026-07-16 ApplicationManager::Update
-        constexpr uintptr_t CAMERA_MATRIX        = 0x1C51190; // 2026-07-16 CameraManager::GetCameraMatrix
-        constexpr uintptr_t PROJECTILE_POSITION  = 0x82CAF0; // 2026-07-16 Projectile::GIBLKPDHLBG(float, out float, out float)
-        constexpr uintptr_t AIM_POINT_PATCH      = 0x7D8AD1; // 2026-07-16 verified 27-byte xmm9/xmm10 world-point site
-        constexpr uintptr_t GAME_TICK            = 0xB136E0; // 2026-07-16 UnityThread::Update
+        constexpr uintptr_t APPLICATION_UPDATE   = 0x79F4E0; // 2026-07-17 native body + preceding-neighbor match
+        constexpr uintptr_t CAMERA_MATRIX        = 0x170D9A0; // 2026-07-17 native signature: CameraManager::GetCameraMatrix
+        constexpr uintptr_t PROJECTILE_POSITION  = 0x197F020; // 2026-07-17 native signature: Projectile::GIBLKPDHLBG(...)
+        constexpr uintptr_t AIM_POINT_PATCH      = 0x1506C61; // 2026-07-17 unique 27-byte xmm9/xmm10 world-point site
+        constexpr uintptr_t GAME_TICK            = 0x1F31660; // 2026-07-17 native body + UnityThread .cctor layout
         constexpr uintptr_t Fixed_Update         = 0x6D3D90; //Updated
         constexpr uintptr_t COLLISION_RESOLVE    = 0x7D3880; // old 0xA47A90, full native-body match
     }

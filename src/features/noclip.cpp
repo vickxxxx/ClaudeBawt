@@ -29,8 +29,8 @@ CollisionFn g_orig = nullptr;
 // constants:
 //   CanMove: PEGDEDNHEHD(float,float)  0x1EAB6A0 -> 0x504640
 //   IsSolid: OKFBFBNJEBH(float,float)  0x1EAA410 -> 0x502E80
-constexpr uintptr_t kCanMoveRva = 0x504640;
-constexpr uintptr_t kIsSolidRva = 0x502E80;
+constexpr uintptr_t kCanMoveRva = 0x1C7CD60; // 2026-07-17 unique native signature
+constexpr uintptr_t kIsSolidRva = 0x1C7B4A0; // 2026-07-17 body + CanMove neighborhood match
 using CanMoveFn = uint8_t(__fastcall*)(uintptr_t, float, float, uintptr_t);
 using IsSolidFn = uint8_t(__fastcall*)(uintptr_t, float, float, uintptr_t);
 CanMoveFn g_origCanMove = nullptr;

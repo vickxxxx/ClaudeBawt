@@ -40,6 +40,7 @@ struct Config {
     bool  socketFu = false;
     Keybind socketFuHotkey;
     bool  showSocketFuTimer = false;
+    float socketFuSpeedFactor = 1.9f;
     bool  socketFuUseSecondSpeed = false;
     bool  socketFuRestrictMovement = false;
     bool  socketFuNoClip = false;

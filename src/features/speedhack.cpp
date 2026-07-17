@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include "MinHook.h"
 
 namespace speedhack {
@@ -33,7 +34,6 @@ ULONGLONG g_fakeTick64 = 0;
 LONGLONG g_realQpc = 0;
 LONGLONG g_fakeQpc = 0;
 bool g_seeded = false;
-bool g_hotkeyHeld = false;
 
 double Sanitize(float value) {
     if (!(value >= 0.0f) || value > 100.0f)
@@ -119,46 +119,49 @@ BOOL WINAPI hkQueryPerformanceCounter(LARGE_INTEGER* out) {
     return ok;
 }
 
-bool KeyDown(int vk) {
-    return vk > 0 && (GetAsyncKeyState(vk) & 0x8000) != 0;
-}
-
 }
 
 float CurrentSpeed() {
-    return static_cast<float>(Sanitize(g_cfg.useSpeed1 ? g_cfg.speedhackSpeed1
-                                                       : g_cfg.speedhackSpeed2));
+    return g_cfg.socketFu
+        ? static_cast<float>(Sanitize(g_cfg.socketFuSpeedFactor))
+        : 1.0f;
 }
 
-
+// SpeedHackDetector::Update(). The original client disables this detector
+// before installing its rebased clock hooks. This RVA was migrated from the
+// old build's actual function start at 0x31F330 by matching the complete
+// native method body and
+// confirming it against dump.cs.
 bool NeuterAntiSpeedCheck() {
-    constexpr uintptr_t kRva = 0x31E310;
+    constexpr uintptr_t kRva = 0x31D2B0;
     uint8_t* site = static_cast<uint8_t*>(ga::Rva(kRva));
     if (!site) {
-        DBLOG("speedhack: anti-check site null (GA not ready?)");
+        DBLOG("speedhack: detector site null (GA not ready?)");
         return false;
     }
-    if (site[0] == 0x40 && site[1] == 0x53) {
-        const uint8_t patch[2] = { 0xC3, 0x90 };
+    static constexpr uint8_t kExpectedPrologue[] = {
+        0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20
+    };
+    if (std::memcmp(site, kExpectedPrologue, sizeof(kExpectedPrologue)) == 0) {
+        const uint8_t patch[2] = {0xC3, 0x90};
         util::Patch(site, patch, sizeof(patch));
-        DBLOG("speedhack: neutered anti-speed check at GA+0x%llX (40 53 -> C3 90)",
-              (unsigned long long)kRva);
+        DBLOG("speedhack: disabled SpeedHackDetector.Update at GA+0x%llX",
+              static_cast<unsigned long long>(kRva));
         return true;
     }
     if (site[0] == 0xC3 || site[0] == 0xE9) {
-        DBLOG("speedhack: anti-check at GA+0x%llX already neutralized (%02X)",
-              (unsigned long long)kRva, (int)site[0]);
+        DBLOG("speedhack: detector already disabled at GA+0x%llX (%02X)",
+              static_cast<unsigned long long>(kRva), (int)site[0]);
         return true;
     }
-    DBLOG("speedhack: anti-check at GA+0x%llX unexpected prologue (%02X %02X) - "
-          "clock scaling NOT installed (would risk a kick)",
-          (unsigned long long)kRva, (int)site[0], (int)site[1]);
+    DBLOG("speedhack: detector GA+0x%llX signature mismatch (%02X %02X); "
+          "clock hooks not installed",
+          static_cast<unsigned long long>(kRva), (int)site[0], (int)site[1]);
     return false;
 }
 
 void Install() {
-
-
+    // Match the original logic: never scale clocks while the detector is live.
     if (!NeuterAntiSpeedCheck())
         return;
 
@@ -180,23 +183,18 @@ void Install() {
         MH_CreateHook(qpc, reinterpret_cast<void*>(&hkQueryPerformanceCounter),
                       reinterpret_cast<void**>(&oQueryPerformanceCounter));
 
+    DBLOG("speedhack: original rebased-clock hooks created (SocketFU-scoped)");
+
     AcquireSRWLockExclusive(&g_clockLock);
     SeedLocked();
-    RebaseLocked(Sanitize(g_cfg.speedhackSpeed1));
+    RebaseLocked(1.0);
     ReleaseSRWLockExclusive(&g_clockLock);
 }
 
 void Tick() {
-
-
-    int vk = g_cfg.speedToggleKey ? g_cfg.speedToggleKey : g_cfg.speedHackHotkey;
-    bool down = KeyDown(vk);
-    if (down && !g_hotkeyHeld)
-        g_cfg.useSpeed1 = !g_cfg.useSpeed1;
-    g_hotkeyHeld = down;
-
-    double selected = Sanitize(g_cfg.useSpeed1 ? g_cfg.speedhackSpeed1
-                                               : g_cfg.speedhackSpeed2);
+    const double selected = g_cfg.socketFu
+        ? Sanitize(g_cfg.socketFuSpeedFactor)
+        : 1.0;
     AcquireSRWLockExclusive(&g_clockLock);
     if (selected != g_multiplier)
         RebaseLocked(selected);
