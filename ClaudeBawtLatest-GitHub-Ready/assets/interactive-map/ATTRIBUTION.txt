@@ -1,0 +1,6 @@
+RotMG Interactive Map artwork and layer data
+Copyright: ErelDev / ereldev-inc
+Source: https://github.com/ereldev-inc/rotmg-interactive-map
+
+Bundled in ClaudeBawt with permission from the project owner, as confirmed by
+the ClaudeBawt project owner on 14 July 2026.
