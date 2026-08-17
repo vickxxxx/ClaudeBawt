@@ -29,8 +29,8 @@ CollisionFn g_orig = nullptr;
 // constants:
 //   CanMove: PEGDEDNHEHD(float,float)  0x1EAB6A0 -> 0x504640
 //   IsSolid: OKFBFBNJEBH(float,float)  0x1EAA410 -> 0x502E80
-constexpr uintptr_t kCanMoveRva = 0x1C7CD60; // 2026-07-17 unique native signature
-constexpr uintptr_t kIsSolidRva = 0x1C7B4A0; // 2026-07-17 body + CanMove neighborhood match
+constexpr uintptr_t kCanMoveRva = 0xF81730; // 2026-08-17 HJMBOMEHGDJ::PEGDEDNHEHD(float,float)
+constexpr uintptr_t kIsSolidRva = 0xF7F9E0; // 2026-08-17 HJMBOMEHGDJ::OKFBFBNJEBH(float,float)
 using CanMoveFn = uint8_t(__fastcall*)(uintptr_t, float, float, uintptr_t);
 using IsSolidFn = uint8_t(__fastcall*)(uintptr_t, float, float, uintptr_t);
 CanMoveFn g_origCanMove = nullptr;
@@ -112,8 +112,10 @@ bool TileIsWall(float x, float y) {
     if (obj) {
         uintptr_t inner = *reinterpret_cast<uintptr_t*>(obj + 24);
         if (inner) {
-            obj1698 = *reinterpret_cast<uint8_t*>(inner + 1698);
-            b34 = *reinterpret_cast<uint8_t*>(inner + 1764);
+            obj1698 = *reinterpret_cast<uint8_t*>(
+                inner + ga::off::STATUS_FULL_OCCUPY);
+            b34 = *reinterpret_cast<uint8_t*>(
+                inner + ga::off::STATUS_GROUND_PROTECT);
             haveObj = true;
         }
     }
@@ -245,14 +247,20 @@ void SetManual(bool on) {
 }
 
 void Install() {
-    void* target = ga::Rva(ga::rva::COLLISION_RESOLVE);
-    DBLOG("noclip::Install: collision target=%p (GA+0x%llX)", target,
-          (unsigned long long)ga::rva::COLLISION_RESOLVE);
-    if (!target)
-        return;
-    const MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void*>(&hkCollision),
-                                       reinterpret_cast<void**>(&g_orig));
-    DBLOG("noclip::Install: MH_CreateHook=%d orig=%p", (int)st, (void*)g_orig);
+    if (ga::rva::COLLISION_RESOLVE) {
+        void* target = ga::Rva(ga::rva::COLLISION_RESOLVE);
+        DBLOG("noclip::Install: collision target=%p (GA+0x%llX)", target,
+              (unsigned long long)ga::rva::COLLISION_RESOLVE);
+        if (target) {
+            const MH_STATUS st = MH_CreateHook(
+                target, reinterpret_cast<void*>(&hkCollision),
+                reinterpret_cast<void**>(&g_orig));
+            DBLOG("noclip::Install: MH_CreateHook=%d orig=%p", (int)st,
+                  (void*)g_orig);
+        }
+    } else {
+        DBLOG("noclip::Install: collision callback disabled for this build");
+    }
 
 
     void* canMove = ga::Rva(kCanMoveRva);

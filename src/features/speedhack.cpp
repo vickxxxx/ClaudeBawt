@@ -133,7 +133,7 @@ float CurrentSpeed() {
 // native method body and
 // confirming it against dump.cs.
 bool NeuterAntiSpeedCheck() {
-    constexpr uintptr_t kRva = 0x31D2B0;
+    constexpr uintptr_t kRva = 0x31F350; // 2026-08-17 SpeedHackDetector::Update exact prologue
     uint8_t* site = static_cast<uint8_t*>(ga::Rva(kRva));
     if (!site) {
         DBLOG("speedhack: detector site null (GA not ready?)");

@@ -1,1 +1,38 @@
+# Build outputs
 dist/
+build/
+out/
+obj/
+*.dll
+*.exe
+*.exp
+*.lib
+*.obj
+*.pdb
+*.ilk
+
+# Visual Studio and editor state
+.vs/
+.vscode/
+*.suo
+*.user
+*.VC.db
+*.VC.VC.opendb
+
+# Runtime and local configuration
+client.log
+*.log
+config.ini
+imgui.ini
+
+# Reverse-engineering inputs and generated dumps
+GameAssembly.dll
+global-metadata*.dat
+dump.cs
+script.json
+stringliteral.json
+DummyDll/
+
+# OS files
+Thumbs.db
+.DS_Store

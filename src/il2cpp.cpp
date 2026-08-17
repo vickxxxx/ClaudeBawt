@@ -2,6 +2,7 @@
 #include "log.h"
 #include <windows.h>
 #include <atomic>
+#include <cmath>
 #include "MinHook.h"
 
 namespace ga {
@@ -83,11 +84,100 @@ namespace game {
     void MoveTo(uintptr_t player, float x, float y) {
         if (!player) return;
         struct Vec2 { float x, y; };
-        using Fn = intptr_t(__fastcall*)(uintptr_t, const Vec2*);
-        auto fn = reinterpret_cast<Fn>(ga::Rva(ga::rva::MOVE_TO));
+        // FKALGHJIADI::FOFMOMDBGGI(float, Vector2) consumes movement input,
+        // not an absolute destination. Resolve it through the live runtime so
+        // metadata-v31 dump misassociations cannot select a dead code clone.
+        using Fn = intptr_t(__fastcall*)(uintptr_t, float, Vec2, uintptr_t);
+        static Fn fn = nullptr;
+        static bool attempted = false;
+        if (!attempted) {
+            attempted = true;
+            HMODULE module = GetModuleHandleA("GameAssembly.dll");
+            using DomainGetFn = void* (*)();
+            using AssemblyOpenFn = void* (*)(void*, const char*);
+            using AssemblyImageFn = void* (*)(void*);
+            using ClassFromNameFn = void* (*)(void*, const char*, const char*);
+            using ClassMethodFn = const void* (*)(void*, const char*, int);
+            using MethodPointerFn = void* (*)(const void*);
+            const auto domainGet = reinterpret_cast<DomainGetFn>(
+                GetProcAddress(module, "il2cpp_domain_get"));
+            const auto assemblyOpen = reinterpret_cast<AssemblyOpenFn>(
+                GetProcAddress(module, "il2cpp_domain_assembly_open"));
+            const auto assemblyImage = reinterpret_cast<AssemblyImageFn>(
+                GetProcAddress(module, "il2cpp_assembly_get_image"));
+            const auto classFromName = reinterpret_cast<ClassFromNameFn>(
+                GetProcAddress(module, "il2cpp_class_from_name"));
+            const auto classMethod = reinterpret_cast<ClassMethodFn>(
+                GetProcAddress(module, "il2cpp_class_get_method_from_name"));
+            const auto methodPointer = reinterpret_cast<MethodPointerFn>(
+                GetProcAddress(module, "il2cpp_method_get_pointer"));
+            if (domainGet && assemblyOpen && assemblyImage && classFromName &&
+                classMethod) {
+                void* domain = domainGet();
+                void* assembly = domain ? assemblyOpen(domain, "Assembly-CSharp") : nullptr;
+                void* image = assembly ? assemblyImage(assembly) : nullptr;
+                void* klass = image ? classFromName(image, "", "FKALGHJIADI") : nullptr;
+                const void* method = klass
+                    ? classMethod(klass, "FOFMOMDBGGI", 2)
+                    : nullptr;
+                void* pointer = method
+                    ? (methodPointer ? methodPointer(method)
+                                     : *reinterpret_cast<void* const*>(method))
+                    : nullptr;
+                fn = reinterpret_cast<Fn>(pointer);
+                DBLOG("MoveTo: runtime movement method=%p (GA+0x%llX)", pointer,
+                      pointer ? static_cast<unsigned long long>(
+                          reinterpret_cast<uintptr_t>(pointer) - ga::Base()) : 0ULL);
+            }
+        }
         if (!fn) return;
-        const Vec2 position{x, y};
-        fn(player, &position);
+        const float px = *reinterpret_cast<const float*>(player + 0x3C);
+        const float py = *reinterpret_cast<const float*>(player + 0x40);
+        float dx = x - px;
+        float dy = -(y - py);
+
+        // FOFMOMDBGGI receives the same camera-relative axes produced by the
+        // game's WASD input. Convert both world points to NDC and steer along
+        // their on-screen delta so cursor following remains correct under
+        // camera rotation and zoom.
+        float matrix[4][4]{};
+        if (CameraMatrix(matrix)) {
+            const auto projectNdc = [&matrix](float worldX, float worldY,
+                                               float& outX, float& outY) {
+                const float vx = worldX;
+                const float vy = -worldY;
+                const float w = matrix[0][3] * vx + matrix[1][3] * vy +
+                                matrix[3][3];
+                if (!std::isfinite(w) || std::fabs(w) < 0.0001f)
+                    return false;
+                outX = (matrix[0][0] * vx + matrix[1][0] * vy +
+                        matrix[3][0]) / w;
+                outY = (matrix[0][1] * vx + matrix[1][1] * vy +
+                        matrix[3][1]) / w;
+                return std::isfinite(outX) && std::isfinite(outY);
+            };
+            float playerX = 0.0f, playerY = 0.0f;
+            float targetX = 0.0f, targetY = 0.0f;
+            if (projectNdc(px, py, playerX, playerY) &&
+                projectNdc(x, y, targetX, targetY)) {
+                const float screenX = targetX - playerX;
+                const float screenY = targetY - playerY;
+                // The native movement axes are isometric: +X travels
+                // top-left and +Y travels top-right. Rotate the desired
+                // on-screen direction into that diagonal basis.
+                dx = screenY - screenX;
+                dy = screenY + screenX;
+            }
+        }
+        const float length = std::sqrt(dx * dx + dy * dy);
+        if (std::isfinite(length) && length > 0.001f) {
+            dx /= length;
+            dy /= length;
+        } else {
+            dx = 0.0f;
+            dy = 0.0f;
+        }
+        fn(player, 0.0f, Vec2{dx, dy}, 0);
     }
 
 
@@ -165,6 +255,11 @@ namespace game {
     void InstallGameTick() {
         if (g_gameTickInstalled.load(std::memory_order_acquire))
             return;
+
+        if (!ga::rva::GAME_TICK) {
+            DBLOG("InstallGameTick: disabled (no verified RVA for this build)");
+            return;
+        }
 
         void* target = ga::Rva(ga::rva::GAME_TICK);
         DBLOG("InstallGameTick: target=%p (GA+0x%llX)", target,

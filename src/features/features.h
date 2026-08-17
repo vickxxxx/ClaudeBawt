@@ -18,6 +18,8 @@ namespace noclip    { void Install(); void Tick(); void Poll(); bool GateActive(
                       void NoteMoveTarget(float x, float y); void SetManual(bool on); }
 namespace hud       { void Tick(); }
 namespace socketfu  { void Install(); void Tick(); }
+namespace puppeteer { void Tick(); }
+namespace follow    { void Tick(); }
 namespace render_projectiles { void Install(); void Tick(); }
 namespace render_tiles       { void Tick(); }
 namespace render_hitbox      { void Tick(); }

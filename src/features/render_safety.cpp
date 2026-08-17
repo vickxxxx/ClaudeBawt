@@ -119,7 +119,8 @@ bool TileBlocked(Vec2 point) {
     const uintptr_t object = *reinterpret_cast<uintptr_t*>(square + 0x48);
     const uintptr_t status =
         object ? *reinterpret_cast<uintptr_t*>(object + 0x18) : 0;
-    if (status && *reinterpret_cast<uint8_t*>(status + 1698)) return true;
+    if (status && *reinterpret_cast<uint8_t*>(
+            status + ga::off::STATUS_FULL_OCCUPY)) return true;
 
     const uintptr_t props = *reinterpret_cast<uintptr_t*>(square + 0x50);
     return props && *reinterpret_cast<uint8_t*>(props + 260);

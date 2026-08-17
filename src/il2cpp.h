@@ -18,22 +18,22 @@ namespace ga {
 
 
     namespace rva {
-        constexpr uintptr_t SHOT_UPDATE          = 0x14F62B0; // 2026-07-17 native signature: CDJLLHJOCNM(float)
-        constexpr uintptr_t MOVE_TO              = 0x14FC890; // 2026-07-17 native signature: FOFMOMDBGGI(float, Vector2)
-        constexpr uintptr_t MOVEMENT_UPDATE      = 0x14F9720; // 2026-07-17 native body match: DKLEJEABOOO(...)
-        constexpr uintptr_t MOVE_SPEED           = 0x14FE090; // 2026-07-17 native signature: GGNFAIKKIEO()
-        constexpr uintptr_t SOCKETFU_MOVE_SPEED  = 0x14FCA00; // 2026-07-17 native signature: GAFGPNKFMOJ()
-        constexpr uintptr_t SOCKET_SEND          = 0x1D8CF00; // 2026-07-17 native body + preceding-neighbor match
-        constexpr uintptr_t SOCKET_QUEUE_PUMP    = 0x198A330; // 2026-07-17 native body + JOEMEFDPIIP neighbor-cluster match
-        constexpr uintptr_t MOVEMENT_FLAG_PATCH  = 0x1D84C1C; // 2026-07-17 unique native signature: movzx ebx,[rsi+41h]
-        constexpr uintptr_t WORLD_CONTEXT_UPDATE = 0x1AE8180; //0xEC82E0;OLD    0x1AE8180 50/50 might be 0x1AE40E0
-        constexpr uintptr_t APPLICATION_UPDATE   = 0x79F4E0; // 2026-07-17 native body + preceding-neighbor match
-        constexpr uintptr_t CAMERA_MATRIX        = 0x170D9A0; // 2026-07-17 native signature: CameraManager::GetCameraMatrix
-        constexpr uintptr_t PROJECTILE_POSITION  = 0x197F020; // 2026-07-17 native signature: Projectile::GIBLKPDHLBG(...)
-        constexpr uintptr_t AIM_POINT_PATCH      = 0x1506C61; // 2026-07-17 unique 27-byte xmm9/xmm10 world-point site
-        constexpr uintptr_t GAME_TICK            = 0x1F31660; // 2026-07-17 native body + UnityThread .cctor layout
-        constexpr uintptr_t Fixed_Update         = 0x6D3D90; //Updated
-        constexpr uintptr_t COLLISION_RESOLVE    = 0x7D3880; // old 0xA47A90, full native-body match
+        constexpr uintptr_t SHOT_UPDATE          = 0x14B19E0; // 2026-08-17 FKALGHJIADI::CDJLLHJOCNM(float)
+        constexpr uintptr_t MOVE_TO              = 0x14B77E0; // 2026-08-17 FKALGHJIADI::FOFMOMDBGGI(float, Vector2)
+        constexpr uintptr_t MOVEMENT_UPDATE      = 0x14B4E90; // 2026-08-17 FKALGHJIADI::DKLEJEABOOO(...)
+        constexpr uintptr_t MOVE_SPEED           = 0x14B8810; // 2026-08-17 FKALGHJIADI::GGNFAIKKIEO()
+        constexpr uintptr_t SOCKETFU_MOVE_SPEED  = 0x14B79E0; // 2026-08-17 FKALGHJIADI::GAFGPNKFMOJ()
+        constexpr uintptr_t SOCKET_SEND          = 0x1D0C410; // 2026-08-17 SocketManager::SendMessage
+        constexpr uintptr_t SOCKET_QUEUE_PUMP    = 0x7962B0;  // 2026-08-17 JOEMEFDPIIP::AIPAABAADIN()
+        constexpr uintptr_t MOVEMENT_FLAG_PATCH  = 0x1D042FC; // 2026-08-17 exact 0F B6 5E 41 patch site
+        constexpr uintptr_t WORLD_CONTEXT_UPDATE = 0;         // unused; no verified August hook
+        constexpr uintptr_t APPLICATION_UPDATE   = 0xA04BC0;  // 2026-08-17 ApplicationManager::Update
+        constexpr uintptr_t CAMERA_MATRIX        = 0x9662D0;  // 2026-08-17 CameraManager::GetCameraMatrix
+        constexpr uintptr_t PROJECTILE_POSITION  = 0xB0E0E0;  // 2026-08-17 HBEAKBIHANL::GIBLKPDHLBG(...)
+        constexpr uintptr_t AIM_POINT_PATCH      = 0x14BFB51; // 2026-08-17 exact 27-byte xmm9/xmm10 site
+        constexpr uintptr_t GAME_TICK            = 0x144C280; // 2026-08-17 UnityThread::Update()
+        constexpr uintptr_t Fixed_Update         = 0;         // unused; no verified August hook
+        constexpr uintptr_t COLLISION_RESOLVE    = 0;         // ambiguous August native callback; intentionally disabled
     }
 
 
@@ -44,9 +44,13 @@ namespace ga {
         constexpr int OBJECT_HEALTH         = 0x20C;
         constexpr int OBJECT_STATUS         = 0x18;
         constexpr int OBJECT_INVULNERABLE   = 0x215;
-        constexpr int OBJECT_EFFECTS        = 0x248;
+        // 2026-08-17 LKHPPBEGNOM::COHCKAPOLCA (System.Int32[]).
+        // 0x248 is now a double and interpreting it as an object pointer crashes.
+        constexpr int OBJECT_EFFECTS        = 0x250;
         constexpr int OBJECT_TYPE           = 0x30;
-        constexpr int STATUS_CAN_TARGET     = 1745;
+        constexpr int STATUS_CAN_TARGET     = 0x6E1; // ObjectProperties::isEnemy (2026-08-17)
+        constexpr int STATUS_FULL_OCCUPY    = 0x6E9; // ObjectProperties::fullOccupy
+        constexpr int STATUS_GROUND_PROTECT = 0x6F4; // ObjectProperties::protectFromGroundDamage
 
 
         constexpr int WORLD_GAME_TIME          = 0x90;

@@ -6,7 +6,11 @@ if "%config%"=="" set "config=Release"
 
 set "root=%~dp0"
 set "src=%root%src"
-set "out=%root%dist"
+if defined CLAUDEBAWT_OUT (
+    set "out=%CLAUDEBAWT_OUT%"
+) else (
+    set "out=%root%dist"
+)
 set "obj=%out%\obj"
 set "imgui=%root%vendor\imgui"
 set "minhook=%root%vendor\minhook"
@@ -40,7 +44,7 @@ if /i "%config%"=="Debug" (
 set "inc=/I"%src%" /I"%imgui%" /I"%imgui%\backends" /I"%minhook%\include" /I"%minhook%\src""
 
 set "cpp_sources="%src%\dllmain.cpp" "%src%\hooks.cpp" "%src%\overlay.cpp" "%src%\menu.cpp" "%src%\skin_catalog.cpp" "%src%\config.cpp" "%src%\il2cpp.cpp" "%src%\util.cpp" "%src%\log.cpp""
-set "cpp_sources=%cpp_sources% "%src%\features\features.cpp" "%src%\features\aim.cpp" "%src%\features\dodge.cpp" "%src%\features\speedhack.cpp" "%src%\features\loot.cpp" "%src%\features\glow.cpp" "%src%\features\fame.cpp" "%src%\features\noclip.cpp" "%src%\features\hud.cpp" "%src%\features\socketfu.cpp""
+set "cpp_sources=%cpp_sources% "%src%\features\features.cpp" "%src%\features\aim.cpp" "%src%\features\dodge.cpp" "%src%\features\speedhack.cpp" "%src%\features\loot.cpp" "%src%\features\glow.cpp" "%src%\features\fame.cpp" "%src%\features\noclip.cpp" "%src%\features\hud.cpp" "%src%\features\socketfu.cpp" "%src%\features\puppeteer.cpp" "%src%\features\follow.cpp""
 set "cpp_sources=%cpp_sources% "%src%\features\render_projectiles.cpp" "%src%\features\render_tiles.cpp" "%src%\features\render_hitbox.cpp" "%src%\features\render_safety.cpp" "%src%\features\render_units_grid.cpp""
 set "cpp_sources=%cpp_sources% "%src%\features\binds_overlay.cpp""
 set "cpp_sources=%cpp_sources% "%src%\features\notifications.cpp""

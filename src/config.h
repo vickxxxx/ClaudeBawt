@@ -47,14 +47,28 @@ struct Config {
     bool  autoNoClip = false;
     bool  noclipEnabled = false;
     Keybind noclipHotkey;
+    bool  puppeteerEnabled = false;
+    bool  puppeteerClickToMove = false;
+    bool  puppeteerOverlay = true;
+    Keybind puppeteerHotkey;
+    bool  fameBot = false;
+    Keybind fameBotHotkey;
+    bool  fameBotAutoFire = true;
+    bool  automationAutoNoClip = true;
+    float fameBotReturnSeconds = 60.0f;
+    float fameBotRoamRadius = 10.0f;
+    bool  followPlayer = false;
+    char  followPlayerName[32]{};
+    float followPlayerDistance = 1.5f;
     bool  antiIdle = false;
     float cameraZoomScale = 1.0f;
     bool  autoAim = true;
     bool  magnetAim = true;
     bool  magnetRangeExt = true;
+    bool  experimentalEpRangeAura = false;
     int   targetingStyle = TS_CURSOR;
     float magnetAimRange = 1.8f;
-    bool  projectileNoClip = true;
+    bool  projectileNoClip = false;
     bool  renderAimInfo = true;
     bool  renderMagnetRange = true;
     bool  renderNormalAimRange = true;
@@ -63,6 +77,8 @@ struct Config {
 
     bool  autoDodge = false;
     bool  dodgeProjectiles = true;
+    bool  dodgeDamagingTiles = true;
+    bool  dodgeMicrostep = true;
     bool  dodgeHoldToToggle = true;
     Keybind dodgingHotkey;
     bool  dodgeInvisible = false;
@@ -74,6 +90,9 @@ struct Config {
     float dodgeUnitAvoidanceScale = 1.0f;
     float dodgeKeepDistance = 0.0f;
     bool  oldDodgeLogic = false;
+    bool  followLantern = false;
+    int   lanternType = 20454;
+    float lanternFollowDistance = 0.35f;
     bool  enablePoisBags = true;
     bool  playSoundForBags = true;
     bool  bagEgg = true;

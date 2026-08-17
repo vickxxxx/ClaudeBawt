@@ -39,8 +39,14 @@ void Tick() {
     FEATURE_TICK("glow", glow::Tick());
     FEATURE_TICK("fame", fame::Tick());
     FEATURE_TICK("noclip", noclip::Tick());
+    // The old simulation-tick hook has no verified August target. Poll these
+    // state machines from the established render tick until it is recovered.
+    fame::Poll();
+    noclip::Poll();
     FEATURE_TICK("hud", hud::Tick());
     FEATURE_TICK("socketfu", socketfu::Tick());
+    FEATURE_TICK("puppeteer", puppeteer::Tick());
+    FEATURE_TICK("follow", follow::Tick());
     FEATURE_TICK("projectiles/aoe", render_projectiles::Tick());
     FEATURE_TICK("tiles", render_tiles::Tick());
     FEATURE_TICK("hitbox", render_hitbox::Tick());

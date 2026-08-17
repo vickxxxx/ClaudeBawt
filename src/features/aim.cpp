@@ -16,6 +16,10 @@
 #include "MinHook.h"
 #include "imgui.h"
 
+// MinHook's internal allocator places executable slots within rel32 range of
+// the supplied address. buffer.c is already part of this build.
+extern "C" void* AllocateBuffer(void* origin);
+
 int g_viewW = 0;
 int g_viewH = 0;
 
@@ -66,11 +70,35 @@ constexpr float kProjectionWidthScale = 0.8125f;
 constexpr float kLosStep = 0.1f;
 constexpr float kNearLosDistance = 1.8f;
 constexpr float kLosStartAdvanceMax = 0.5f;
+constexpr uintptr_t kEpSpreadScaleRva = 0x14BF870; // 2026-08-17 exact mulss xmm13,xmm0 site
 
 float Distance(Vec2 a, Vec2 b) {
     const float dx = a.x - b.x;
     const float dy = a.y - b.y;
     return std::sqrt(dx * dx + dy * dy);
+}
+
+template <typename T>
+bool SafeRead(uintptr_t address, T& value) {
+    if (address <= 0xFFFF) return false;
+    __try {
+        value = *reinterpret_cast<const T*>(address);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        value = {};
+        return false;
+    }
+}
+
+template <typename T>
+bool SafeWrite(uintptr_t address, const T& value) {
+    if (address <= 0xFFFF) return false;
+    __try {
+        *reinterpret_cast<T*>(address) = value;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
 }
 
 bool QueryTile(Vec2 point, TileInfo& out) {
@@ -108,8 +136,10 @@ bool QueryTile(Vec2 point, TileInfo& out) {
     if (object) {
         const uintptr_t status = *reinterpret_cast<uintptr_t*>(object + 24);
         if (status) {
-            fullOccupy = *reinterpret_cast<uint8_t*>(status + 1698) != 0;
-            objectAllowsWalk = *reinterpret_cast<uint8_t*>(status + 1764) != 0;
+            fullOccupy = *reinterpret_cast<uint8_t*>(
+                status + ga::off::STATUS_FULL_OCCUPY) != 0;
+            objectAllowsWalk = *reinterpret_cast<uint8_t*>(
+                status + ga::off::STATUS_GROUND_PROTECT) != 0;
         }
     }
 
@@ -199,7 +229,8 @@ void SnapshotTargets(std::vector<Target>& targets) {
         const uintptr_t status =
             *reinterpret_cast<uintptr_t*>(object + ga::off::OBJECT_STATUS);
         target.targetable =
-            status && *reinterpret_cast<uint8_t*>(status + 1745) != 0;
+            status && *reinterpret_cast<uint8_t*>(
+                status + ga::off::STATUS_CAN_TARGET) != 0;
         if (target.type == 20469 || target.type == 20464)
             target.targetable = true;
         targets.push_back(target);
@@ -216,33 +247,45 @@ bool Eligible(const Target& target) {
 
 bool ReadProjectileInfo(uintptr_t player, ProjectileInfo& out) {
     out = {};
-    const uintptr_t equipped = *reinterpret_cast<uintptr_t*>(player + 704);
-    const uintptr_t equippedData = equipped ? *reinterpret_cast<uintptr_t*>(equipped + 16) : 0;
-    out.id = equippedData ? *reinterpret_cast<int*>(equippedData + 32) : -1;
+    if (player <= 0xFFFF) return false;
 
-    const uintptr_t a = *reinterpret_cast<uintptr_t*>(player + 1544);
-    const uintptr_t b = a ? *reinterpret_cast<uintptr_t*>(a + 16) : 0;
-    const uintptr_t c = b ? *reinterpret_cast<uintptr_t*>(b + 24) : 0;
-    const uintptr_t d = c ? *reinterpret_cast<uintptr_t*>(c + 16) : 0;
-    const uintptr_t list = d ? *reinterpret_cast<uintptr_t*>(d + 24) : 0;
-    if (!list || out.id == -1) return false;
-
-    const uint32_t count = *reinterpret_cast<uint32_t*>(list + 24);
-    if (!count || count > 79999) return false;
-    for (uint32_t i = 0; i < count; ++i) {
-        const uintptr_t entry = list + 40 + 24ull * i;
-        if (*reinterpret_cast<int*>(entry) != out.id) continue;
-        const uintptr_t projectile = *reinterpret_cast<uintptr_t*>(entry + 8);
-        const uintptr_t p0 = projectile ? *reinterpret_cast<uintptr_t*>(projectile + 448) : 0;
-        const uintptr_t props = p0 ? *reinterpret_cast<uintptr_t*>(p0 + 32) : 0;
-        if (!props) return false;
-        out.lifetimeMs = *reinterpret_cast<float*>(props + 352);
-        out.speedTenths = *reinterpret_cast<int*>(props + 360);
-        if (g_cfg.projectileNoClip)
-            *reinterpret_cast<uint8_t*>(props + 369) = 1;
-        return true;
+    // August's firing routine reads the active attack container from +0x6B0.
+    // ODMIGGKEOJL::FLNJGGLHKNA (+0x10) is ADNDPMIHLGP, whose +0x10 field is
+    // the equipped weapon's ObjectProperties. This avoids the stale July
+    // database chain rooted at player+0x608.
+    uintptr_t container = 0;
+    uintptr_t attack = 0;
+    uintptr_t weapon = 0;
+    uintptr_t projectiles = 0;
+    uintptr_t projectile = 0;
+    int count = 0;
+    if (!SafeRead(player + 0x6B0, container) ||
+        !SafeRead(container + 0x10, attack) ||
+        !SafeRead(attack + 0x10, weapon) ||
+        !SafeRead(weapon + 0x1C0, projectiles) ||
+        !SafeRead(projectiles + 0x18, count) || count < 1 || count > 256 ||
+        !SafeRead(projectiles + 0x20, projectile)) {
+        return false;
     }
-    return false;
+
+    SafeRead(weapon + 0x6B4, out.id); // ObjectProperties::type
+    if (!SafeRead(projectile + 0x160, out.lifetimeMs) ||
+        !SafeRead(projectile + 0x168, out.speedTenths)) {
+        return false;
+    }
+    if (!std::isfinite(out.lifetimeMs) || out.lifetimeMs <= 0.0f ||
+        out.lifetimeMs > 120000.0f || out.speedTenths <= 0 ||
+        out.speedTenths > 100000) {
+        out = {};
+        return false;
+    }
+
+    // ProjectileProperties::IsPassesCover is verified at +0x171 in this dump.
+    if (g_cfg.projectileNoClip) {
+        const uint8_t enabled = 1;
+        SafeWrite(projectile + 0x171, enabled);
+    }
+    return true;
 }
 
 bool GetCamera(CameraMatrix& matrix) {
@@ -343,10 +386,79 @@ void DrawAimRanges() {
 }
 
 uint8_t* g_cave = nullptr;
+uint8_t* g_epCave = nullptr;
 float* g_aimPoint = nullptr;
+float* g_epAimData = nullptr; // player x/y, direction x/y, radius
 bool g_patchEnabled = false;
 bool g_haveBackup = false;
 uint8_t g_backup[40]{};
+bool g_epSpreadPatched = false;
+uint8_t* g_epSpreadCave = nullptr;
+
+void SetEpSpreadPatch(bool enable) {
+    if (enable == g_epSpreadPatched) return;
+    auto* site = static_cast<uint8_t*>(ga::Rva(kEpSpreadScaleRva));
+    if (!site) return;
+
+    // Native: mulss xmm13,xmm0. xmm13 is the weapon's angular step. Scaling
+    // it to zero aligns every projectile in the native subattack/burst loop
+    // without replacing that loop or its projectile IDs.
+    static constexpr uint8_t kNative[5] =
+        {0xF3, 0x44, 0x0F, 0x59, 0xE8};
+
+    if (enable && std::memcmp(site, kNative, sizeof(kNative)) != 0) {
+        DBLOG("SetEpSpreadPatch: signature mismatch at GA+0x%llX",
+              (unsigned long long)kEpSpreadScaleRva);
+        return;
+    }
+
+    uint8_t patch[5]{};
+    if (enable) {
+        if (!g_epSpreadCave) {
+            g_epSpreadCave =
+                static_cast<uint8_t*>(AllocateBuffer(static_cast<void*>(site)));
+            if (!g_epSpreadCave) return;
+
+            static constexpr uint8_t kStub[15] = {
+                0xF3,0x44,0x0F,0x59,0xE8,             // native mulss xmm13,xmm0
+                0xF3,0x44,0x0F,0x59,0x2D,0x01,0,0,0, // mulss xmm13,[scale]
+                0xC3                                   // ret
+            };
+            std::memcpy(g_epSpreadCave, kStub, sizeof(kStub));
+            const float scale = 0.0f;
+            std::memcpy(g_epSpreadCave + sizeof(kStub), &scale, sizeof(scale));
+            FlushInstructionCache(GetCurrentProcess(), g_epSpreadCave, 32);
+        }
+
+        const intptr_t displacement =
+            reinterpret_cast<intptr_t>(g_epSpreadCave) -
+            (reinterpret_cast<intptr_t>(site) + sizeof(patch));
+        if (displacement < INT32_MIN || displacement > INT32_MAX) {
+            DBLOG("SetEpSpreadPatch: cave is outside rel32 range");
+            return;
+        }
+        patch[0] = 0xE8;
+        const int32_t rel = static_cast<int32_t>(displacement);
+        std::memcpy(patch + 1, &rel, sizeof(rel));
+    } else {
+        if (site[0] != 0xE8) {
+            DBLOG("SetEpSpreadPatch: restore refused; call patch missing");
+            return;
+        }
+        std::memcpy(patch, kNative, sizeof(patch));
+    }
+
+    DWORD oldProtection = 0;
+    if (!VirtualProtect(site, sizeof(patch), PAGE_EXECUTE_READWRITE,
+                        &oldProtection))
+        return;
+    std::memcpy(site, patch, sizeof(patch));
+    VirtualProtect(site, sizeof(patch), oldProtection, &oldProtection);
+    FlushInstructionCache(GetCurrentProcess(), site, sizeof(patch));
+    g_epSpreadPatched = enable;
+    DBLOG("SetEpSpreadPatch: enable=%d angular-step scale=%.3f", (int)enable,
+          enable ? 0.0f : 1.0f);
+}
 
 void SetAutoAimPatch(bool enable) {
     if (enable == g_patchEnabled) return;
@@ -375,7 +487,8 @@ void SetAutoAimPatch(bool enable) {
         }
         if (!g_cave) {
             g_cave = static_cast<uint8_t*>(
-                VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+                VirtualAlloc(nullptr, 160, MEM_COMMIT | MEM_RESERVE,
+                             PAGE_EXECUTE_READWRITE));
             if (!g_cave) return;
             const uint8_t stub[24] = {
                 0xF3,0x44,0x0F,0x10,0x0D,0x0F,0x00,0x00,0x00,
@@ -384,6 +497,33 @@ void SetAutoAimPatch(bool enable) {
             };
             std::memcpy(g_cave, stub, sizeof(stub));
             g_aimPoint = reinterpret_cast<float*>(g_cave + 24);
+
+            // Per-projectile EP origin. The native loop index/count live at
+            // caller stack +78h/+74h. A call pushes eight bytes, so this cave
+            // reads them at +80h/+7Ch and computes:
+            // player + direction * radius * index / (count - 1).
+            static constexpr uint8_t epStub[] = {
+                0x8B,0x44,0x24,0x80,             // mov eax,[rsp+80h]
+                0xF3,0x0F,0x2A,0xC0,             // cvtsi2ss xmm0,eax
+                0x8B,0x4C,0x24,0x7C,             // mov ecx,[rsp+7Ch]
+                0xFF,0xC9,                        // dec ecx (count - 1)
+                0x83,0xF9,0x01,                   // cmp ecx,1
+                0x7D,0x05,                        // jge +5
+                0xB9,0x01,0x00,0x00,0x00,        // mov ecx,1
+                0xF3,0x0F,0x2A,0xC9,             // cvtsi2ss xmm1,ecx
+                0xF3,0x0F,0x5E,0xC1,             // divss xmm0,xmm1
+                0xF3,0x0F,0x59,0x05,0x48,0,0,0, // mulss xmm0,[radius]
+                0xF3,0x44,0x0F,0x10,0x0D,0x37,0,0,0, // movss xmm9,[dirX]
+                0xF3,0x44,0x0F,0x59,0xC8,        // mulss xmm9,xmm0
+                0xF3,0x44,0x0F,0x58,0x0D,0x21,0,0,0, // addss xmm9,[playerX]
+                0xF3,0x44,0x0F,0x10,0x15,0x24,0,0,0, // movss xmm10,[dirY]
+                0xF3,0x44,0x0F,0x59,0xD0,        // mulss xmm10,xmm0
+                0xF3,0x44,0x0F,0x58,0x15,0x0E,0,0,0, // addss xmm10,[playerY]
+                0xC3
+            };
+            g_epCave = g_cave + 32;
+            std::memcpy(g_epCave, epStub, sizeof(epStub));
+            g_epAimData = reinterpret_cast<float*>(g_cave + 128);
         }
         if (!g_haveBackup) {
             std::memcpy(g_backup, site, sizeof(g_backup));
@@ -410,6 +550,24 @@ void SetAutoAimPatch(bool enable) {
     g_patchEnabled = enable;
 }
 
+void SetAimCaveMode(bool experimental) {
+    if (!g_patchEnabled || !g_cave || !g_epCave) return;
+    auto* site = static_cast<uint8_t*>(ga::Rva(ga::rva::AIM_POINT_PATCH));
+    if (!site) return;
+    const uintptr_t desired = reinterpret_cast<uintptr_t>(
+        experimental ? g_epCave : g_cave);
+    uintptr_t current = 0;
+    std::memcpy(&current, site + 8, sizeof(current));
+    if (current == desired) return;
+    DWORD oldProtection = 0;
+    if (!VirtualProtect(site + 8, sizeof(desired), PAGE_EXECUTE_READWRITE,
+                        &oldProtection))
+        return;
+    std::memcpy(site + 8, &desired, sizeof(desired));
+    VirtualProtect(site + 8, sizeof(desired), oldProtection, &oldProtection);
+    FlushInstructionCache(GetCurrentProcess(), site + 8, sizeof(desired));
+}
+
 using AimFn = void(__fastcall*)(uintptr_t, float, uintptr_t);
 AimFn g_originalAim = nullptr;
 
@@ -429,6 +587,12 @@ void __fastcall HookAim(uintptr_t self, float inputAngle, uintptr_t methodInfo) 
 
     ProjectileInfo projectile{};
     ReadProjectileInfo(player, projectile);
+    const bool epRangeAura = g_cfg.experimentalEpRangeAura && g_cfg.magnetAim;
+    const float nativeProjectileRange =
+        projectile.lifetimeMs > 0.0f && projectile.speedTenths > 0
+            ? (static_cast<float>(projectile.speedTenths) / 10.0f) / 1000.0f *
+                  projectile.lifetimeMs
+            : 0.0f;
 
     std::vector<Target> targets;
     SnapshotTargets(targets);
@@ -446,8 +610,25 @@ void __fastcall HookAim(uintptr_t self, float inputAngle, uintptr_t methodInfo) 
 
     const Target* best = nullptr;
     float bestMetric = 99999.0f;
+    int hpTargets = 0;
+    int enemyTargets = 0;
+    int vulnerableTargets = 0;
+    int conditionTargets = 0;
     for (const Target& target : targets) {
+        if (target.hp > 0) ++hpTargets;
+        if (target.hp > 0 && target.targetable) ++enemyTargets;
+        if (target.hp > 0 && target.targetable && !target.invulnerable)
+            ++vulnerableTargets;
+        if (Eligible(target)) ++conditionTargets;
         if (!Eligible(target)) continue;
+        if (epRangeAura) {
+            const float targetDistance = Distance(target.position, playerPosition);
+            if (nativeProjectileRange <= 0.0f ||
+                targetDistance > nativeProjectileRange +
+                                     1.99f + 0.15f ||
+                !LineOfSight(playerPosition, target.position))
+                continue;
+        }
         float metric = 99999.0f;
         if (g_cfg.targetingStyle == Config::TS_DISTANCE ||
             (g_cfg.targetingStyle == Config::TS_CURSOR && !haveCamera)) {
@@ -463,6 +644,32 @@ void __fastcall HookAim(uintptr_t self, float inputAngle, uintptr_t methodInfo) 
             bestMetric = metric;
             best = &target;
         }
+    }
+
+    // isEnemy is verified in the August ObjectProperties layout. If every
+    // enemy was rejected only by the still-obfuscated invulnerability or
+    // condition fields, keep magnet aim useful by selecting the nearest live
+    // enemy as a conservative fallback.
+    if (!best && g_cfg.magnetAim) {
+        for (const Target& target : targets) {
+            if (target.hp <= 0 || !target.targetable) continue;
+            const float metric = Distance(target.position, playerPosition);
+            if (metric > 0.05f && metric < bestMetric) {
+                bestMetric = metric;
+                best = &target;
+            }
+        }
+    }
+
+    // Experimental cave mode executes for every generated projectile, even
+    // when no aura target was selected. Always seed it with a valid local
+    // fallback so a target loss can never emit projectiles near world (0, 0).
+    if (epRangeAura && g_epAimData) {
+        g_epAimData[0] = playerPosition.x;
+        g_epAimData[1] = playerPosition.y;
+        g_epAimData[2] = std::cos(inputAngle);
+        g_epAimData[3] = std::sin(inputAngle);
+        g_epAimData[4] = 0.0f;
     }
 
     if (g_aimPoint) {
@@ -484,7 +691,21 @@ void __fastcall HookAim(uintptr_t self, float inputAngle, uintptr_t methodInfo) 
                 losStart.y += direction.y * advance;
             }
 
-            if (distance <= g_cfg.magnetAimRange) {
+            if (epRangeAura) {
+                // Keep the shared origin inside the server-accepted movement
+                // envelope. Placing it directly on a distant target causes an
+                // immediate disconnect; 1.99 tiles is the proven safe advance.
+                const float auraAdvance = std::min(distance, 1.99f);
+                output.x = playerPosition.x + direction.x * auraAdvance;
+                output.y = playerPosition.y + direction.y * auraAdvance;
+                if (g_epAimData) {
+                    g_epAimData[0] = playerPosition.x;
+                    g_epAimData[1] = playerPosition.y;
+                    g_epAimData[2] = direction.x;
+                    g_epAimData[3] = direction.y;
+                    g_epAimData[4] = auraAdvance;
+                }
+            } else if (distance <= g_cfg.magnetAimRange) {
                 if (distance < kNearLosDistance ||
                     LineOfSight(playerPosition, losStart)) {
                     output = best->position;
@@ -515,9 +736,11 @@ void __fastcall HookAim(uintptr_t self, float inputAngle, uintptr_t methodInfo) 
     static int debugShots = 0;
     if (debugShots < 8) {
         ++debugShots;
-        DBLOG("HookAim: shot=%d targets=%llu best=%p style=%d camera=%d input=%.3f output=%.3f",
-              debugShots, (unsigned long long)targets.size(), (const void*)best,
-              g_cfg.targetingStyle, (int)haveCamera, inputAngle, outputAngle);
+        DBLOG("HookAim: shot=%d targets=%llu hp=%d enemy=%d vulnerable=%d eligible=%d best=%p style=%d camera=%d input=%.3f output=%.3f",
+              debugShots, (unsigned long long)targets.size(), hpTargets,
+              enemyTargets, vulnerableTargets, conditionTargets,
+              (const void*)best, g_cfg.targetingStyle, (int)haveCamera,
+              inputAngle, outputAngle);
     }
 
     if (g_originalAim) g_originalAim(self, outputAngle, methodInfo);
@@ -545,6 +768,11 @@ void Tick() {
     // 0x7D8AD1 is the verified start of the 27-byte world-space aim-point
     // calculation that produces xmm9/xmm10 immediately before projectile setup.
     SetAutoAimPatch(g_cfg.magnetAim);
+    // The protocol permits one shared origin per shot group. Supplying a
+    // different origin for each EP projectile causes an immediate disconnect,
+    // so experimental mode keeps the normal shared Kill Aura cave.
+    SetAimCaveMode(false);
+    SetEpSpreadPatch(g_cfg.magnetAim && g_cfg.experimentalEpRangeAura);
     DrawAimRanges();
 }
 

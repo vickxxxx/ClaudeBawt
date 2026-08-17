@@ -56,14 +56,15 @@ struct TileInfo {
     bool present = false;
     int type = 37;
     bool blocked = false;
+    bool damaging = false;
 };
 
 
-constexpr uintptr_t kMoveUpdateRva = 0x14F79F0; // 2026-07-17 native signature: CJCEGCEMIGE(float, float)
-constexpr uintptr_t kMoveSpeedRva = 0x14FCA00; // 2026-07-17 native signature: GAFGPNKFMOJ()
+constexpr uintptr_t kMoveUpdateRva = 0x14B3110; // 2026-08-17 FKALGHJIADI::CJCEGCEMIGE(float, float)
+constexpr uintptr_t kMoveSpeedRva = 0x14B79E0; // 2026-08-17 FKALGHJIADI::GAFGPNKFMOJ()
 
-constexpr uintptr_t kPlayerUpdateRva = 0x14FE560; // 2026-07-17 native signature: GJFKGLJEGKO(int, int)
-constexpr uintptr_t kCollisionRadiusMultiplierOffset = 0x788; // ObjectProperties::collisionRadiusMultiplier
+constexpr uintptr_t kPlayerUpdateRva = 0x14B8BF0; // 2026-08-17 FKALGHJIADI::GJFKGLJEGKO(int, int)
+constexpr uintptr_t kCollisionRadiusMultiplierOffset = 0x798; // ObjectProperties::collisionRadiusMultiplier (2026-08-17)
 
 
 constexpr float kCandidatePadding = 0.06f;
@@ -123,8 +124,10 @@ bool QueryTile(Vec2 point, TileInfo& out) {
     if (object) {
         const uintptr_t status = *reinterpret_cast<uintptr_t*>(object + 24);
         if (status) {
-            fullOccupy = *reinterpret_cast<uint8_t*>(status + 1698) != 0;
-            objectAllowsWalk = *reinterpret_cast<uint8_t*>(status + 1764) != 0;
+            fullOccupy = *reinterpret_cast<uint8_t*>(
+                status + ga::off::STATUS_FULL_OCCUPY) != 0;
+            objectAllowsWalk = *reinterpret_cast<uint8_t*>(
+                status + ga::off::STATUS_GROUND_PROTECT) != 0;
         }
     }
 
@@ -135,7 +138,9 @@ bool QueryTile(Vec2 point, TileInfo& out) {
         damaging = *reinterpret_cast<uint8_t*>(props + 260) != 0;
         damage = *reinterpret_cast<int*>(props + 268);
     }
-    out.blocked = out.type == 34 || out.type == 5 || damaging || fullOccupy;
+    out.damaging = damaging ||
+        (damage > 0 && (out.type == 37 || (object && !objectAllowsWalk)));
+    out.blocked = out.type == 34 || out.type == 5 || out.damaging || fullOccupy;
     if (damage > 0 && (out.type == 37 || (object && !objectAllowsWalk)))
         out.blocked = true;
     return true;
@@ -179,6 +184,70 @@ bool SegmentBlocked(Vec2 from, Vec2 to) {
     return false;
 }
 
+bool SegmentDamaging(Vec2 from, Vec2 to) {
+    const float dx = to.x - from.x;
+    const float dy = to.y - from.y;
+    const float distance = std::sqrt(dx * dx + dy * dy);
+    const int samples = std::max(1, static_cast<int>(std::ceil(distance / 0.15f)));
+    TileInfo startTile{};
+    QueryTile(from, startTile);
+    const int startX = static_cast<int>(from.x);
+    const int startY = static_cast<int>(from.y);
+    static constexpr Vec2 footprint[] = {
+        {0.0f, 0.0f}, {-0.22f, -0.22f}, {0.22f, -0.22f},
+        {-0.22f, 0.22f}, {0.22f, 0.22f},
+    };
+
+    for (int i = 1; i <= samples; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(samples);
+        const Vec2 center{from.x + dx * t, from.y + dy * t};
+        for (const Vec2 offset : footprint) {
+            const Vec2 point{center.x + offset.x, center.y + offset.y};
+            TileInfo tile{};
+            if (!QueryTile(point, tile) || !tile.damaging)
+                continue;
+            const bool stillLeavingStart = startTile.damaging &&
+                static_cast<int>(point.x) == startX &&
+                static_cast<int>(point.y) == startY;
+            if (!stillLeavingStart)
+                return true;
+        }
+    }
+    return false;
+}
+
+bool FindSafeMovement(Vec2 current, Vec2 requested, Vec2& output) {
+    const float dx = requested.x - current.x;
+    const float dy = requested.y - current.y;
+    const float distance = std::sqrt(dx * dx + dy * dy);
+    if (distance < 1.0e-6f) {
+        output = current;
+        return false;
+    }
+    if (!SegmentDamaging(current, requested)) {
+        output = requested;
+        return true;
+    }
+
+    const float base = std::atan2(dy, dx);
+    constexpr float angleStep = kTwoPi / 16.0f;
+    for (int turn = 1; turn <= 4; ++turn) {
+        for (const int side : {-1, 1}) {
+            const float angle = base + side * angleStep * static_cast<float>(turn);
+            const Vec2 candidate{
+                current.x + std::cos(angle) * distance,
+                current.y + std::sin(angle) * distance,
+            };
+            if (!SegmentDamaging(current, candidate)) {
+                output = candidate;
+                return true;
+            }
+        }
+    }
+    output = current;
+    return false;
+}
+
 int CurrentGameTime(uintptr_t world) {
     return world
         ? *reinterpret_cast<int*>(world + ga::off::WORLD_GAME_TIME)
@@ -209,7 +278,8 @@ VisibilityMap SnapshotVisibility() {
         const int objectId = *reinterpret_cast<int*>(object + 0x34);
         const uintptr_t status = *reinterpret_cast<uintptr_t*>(object + 0x18);
         visibility[objectId] =
-            status && *reinterpret_cast<uint8_t*>(status + 1745) != 0;
+            status && *reinterpret_cast<uint8_t*>(
+                status + ga::off::STATUS_CAN_TARGET) != 0;
     }
     return visibility;
 }
@@ -246,7 +316,8 @@ std::vector<Vec2> GatherEnemies() {
         if (*reinterpret_cast<int*>(object + ga::off::OBJECT_HEALTH) <= 0) continue;
         const uintptr_t status =
             *reinterpret_cast<uintptr_t*>(object + ga::off::OBJECT_STATUS);
-        if (status <= 0xFFFF || *reinterpret_cast<uint8_t*>(status + 1745) == 0) continue;
+        if (status <= 0xFFFF || *reinterpret_cast<uint8_t*>(
+                status + ga::off::STATUS_CAN_TARGET) == 0) continue;
         enemies.push_back({*reinterpret_cast<float*>(object + ga::off::OBJECT_X),
                            *reinterpret_cast<float*>(object + ga::off::OBJECT_Y)});
     }
@@ -521,6 +592,8 @@ Candidate ChooseCandidate(Vec2 center, int gameTime,
     Candidate best{};
     double bestScore = -std::numeric_limits<double>::infinity();
     for (const Candidate& candidate : rings[0].candidates) {
+        if (!candidate.legal)
+            continue;
         const float dx = candidate.position.x - attractor.x;
         const float dy = candidate.position.y - attractor.y;
         const float distance = std::max(std::sqrt(dx * dx + dy * dy), 1e-6f);
@@ -548,6 +621,66 @@ Candidate ChooseCandidate(Vec2 center, int gameTime,
     return best;
 }
 
+Candidate ChooseMicrostep(Vec2 center, Vec2 requested, int gameTime,
+                          unsigned currentSafeFor,
+                          bool forwardCross,
+                          const std::vector<Threat>& threats,
+                          const std::vector<Vec2>& enemies) {
+    constexpr float radius = 0.5f;
+    constexpr int directions = 16;
+    float wantedX = requested.x - center.x;
+    float wantedY = requested.y - center.y;
+    const float wantedLength = std::sqrt(wantedX * wantedX + wantedY * wantedY);
+    if (wantedLength > 1.0e-5f) {
+        wantedX /= wantedLength;
+        wantedY /= wantedLength;
+    } else {
+        wantedX = 0.0f;
+        wantedY = 0.0f;
+    }
+
+    Candidate best{};
+    double bestScore = -std::numeric_limits<double>::infinity();
+    for (int i = 0; i < directions; ++i) {
+        const float angle = kTwoPi * static_cast<float>(i) /
+                            static_cast<float>(directions);
+        const float dirX = std::cos(angle);
+        const float dirY = std::sin(angle);
+        Candidate candidate{};
+        candidate.position = {center.x + dirX * radius,
+                              center.y + dirY * radius};
+        candidate.legal = !SegmentBlocked(center, candidate.position) &&
+            (!g_cfg.dodgeDamagingTiles ||
+             !SegmentDamaging(center, candidate.position));
+        if (!candidate.legal)
+            continue;
+
+        const bool destinationSafe = PositionSafe(
+            candidate.position, gameTime, threats, candidate.safeForMs);
+        const double alignment = dirX * wantedX + dirY * wantedY;
+        if (forwardCross && (!destinationSafe || alignment < 0.35))
+            continue;
+        if (!forwardCross && candidate.safeForMs <= currentSafeFor)
+            continue;
+        if (g_cfg.dodgeKeepDistance > 0.0f && !enemies.empty() &&
+            EnemyClearance(candidate.position, enemies) < g_cfg.dodgeKeepDistance)
+            continue;
+
+        // Safety dominates. Input alignment only breaks ties so an emergency
+        // step still feels like the direction the player was already moving.
+        const double score = forwardCross
+            ? alignment * 100000.0 +
+                  static_cast<double>(std::min(candidate.safeForMs, 10000u))
+            : static_cast<double>(std::min(candidate.safeForMs, 10000u)) * 10.0 +
+                  alignment * 250.0;
+        if (score > bestScore) {
+            bestScore = score;
+            best = candidate;
+        }
+    }
+    return best;
+}
+
 float MoveSpeed(uintptr_t player) {
     auto fn = reinterpret_cast<MoveSpeedFn>(ga::Rva(kMoveSpeedRva));
     const float speed = fn ? fn(player) : 0.0f;
@@ -562,8 +695,12 @@ int64_t __fastcall HookMoveUpdate(uintptr_t player, float targetX, float targetY
     noclip::NoteMoveTarget(targetX, -targetY);
 
 
-    if (!g_cfg.dodgeProjectiles ||
-        g_bindSuspended.load(std::memory_order_acquire) || !player)
+    const bool suspended = g_bindSuspended.load(std::memory_order_acquire);
+    const bool projectileDodge = g_cfg.dodgeProjectiles && !suspended;
+    const bool tileAvoidance = g_cfg.dodgeDamagingTiles && !suspended &&
+        (g_cfg.dodgeProjectiles || g_cfg.puppeteerEnabled || g_cfg.followPlayer ||
+         g_cfg.followLantern || g_cfg.fameBot);
+    if ((!projectileDodge && !tileAvoidance) || !player)
         return g_originalMoveUpdate ? g_originalMoveUpdate(player, targetX, targetY) : 0;
 
     const uintptr_t world = game::Root();
@@ -580,6 +717,24 @@ int64_t __fastcall HookMoveUpdate(uintptr_t player, float targetX, float targetY
                        *reinterpret_cast<float*>(player + ga::off::OBJECT_Y)};
     const Vec2 requested{targetX, -targetY};
 
+    Vec2 tileSafeRequested = requested;
+    const bool haveTileSafeMovement = !tileAvoidance ||
+        FindSafeMovement(current, requested, tileSafeRequested);
+
+    if (!projectileDodge) {
+        if (!haveTileSafeMovement)
+            tileSafeRequested = current;
+        return g_originalMoveUpdate
+            ? g_originalMoveUpdate(player, tileSafeRequested.x, -tileSafeRequested.y)
+            : 0;
+    }
+
+    // Never let the terrain guard bypass projectile evaluation. If no tangent
+    // was available, treating the current position as the requested position
+    // still lets the threat solver select a legal emergency dodge candidate.
+    if (!haveTileSafeMovement)
+        tileSafeRequested = current;
+
     std::vector<Threat> threats;
     GatherThreats(threats, gameTime);
     const std::vector<Vec2> enemies = GatherEnemies();
@@ -592,23 +747,58 @@ int64_t __fastcall HookMoveUpdate(uintptr_t player, float targetX, float targetY
 
 
     unsigned currentSafeFor = kNoThreatTime;
-    const bool currentSafe =
-        PositionSafe(current, gameTime, threats, currentSafeFor) && !currentInBuffer;
+    const bool currentProjectileSafe =
+        PositionSafe(current, gameTime, threats, currentSafeFor);
+    const bool currentSafe = currentProjectileSafe && !currentInBuffer;
     unsigned requestedSafeFor = kNoThreatTime;
-    const bool requestedSafe =
-        PositionSafe(requested, gameTime, threats, requestedSafeFor) && !InBuffer(requested);
+    const bool requestedProjectileSafe =
+        PositionSafe(tileSafeRequested, gameTime, threats, requestedSafeFor);
+    const bool requestedSafe = requestedProjectileSafe &&
+        !InBuffer(tileSafeRequested);
+
+    // Hybrid emergency layer: ordinary movement remains unchanged until a
+    // projectile is about to overlap the current hitbox. It can also hop
+    // forward across a projectile line that would otherwise cancel held input.
+    // Both paths remain terrain-validated half-tile steps.
+    static int lastMicrostepTime = std::numeric_limits<int>::min();
+    const unsigned emergencyWindow = static_cast<unsigned>(
+        std::clamp(g_cfg.dodgeMoveAwayMs, 50, 1000));
+    const bool cooldownReady = lastMicrostepTime == std::numeric_limits<int>::min() ||
+        gameTime - lastMicrostepTime >= 20;
+    const float requestedDx = tileSafeRequested.x - current.x;
+    const float requestedDy = tileSafeRequested.y - current.y;
+    const bool hasHeldMovement =
+        requestedDx * requestedDx + requestedDy * requestedDy > 0.0025f;
+    const bool emergencyEscape =
+        !currentProjectileSafe && currentSafeFor <= emergencyWindow;
+    const bool forwardCross = currentProjectileSafe && hasHeldMovement &&
+        !requestedProjectileSafe && requestedSafeFor <= emergencyWindow;
+    if (g_cfg.dodgeMicrostep && (emergencyEscape || forwardCross) &&
+        cooldownReady) {
+        const Candidate step = ChooseMicrostep(
+            current, tileSafeRequested, gameTime, currentSafeFor, forwardCross,
+            threats, enemies);
+        if (step.legal) {
+            lastMicrostepTime = gameTime;
+            return g_originalMoveUpdate
+                ? g_originalMoveUpdate(player, step.position.x, -step.position.y)
+                : 0;
+        }
+    }
 
 
     if (requestedSafe)
-        return g_originalMoveUpdate ? g_originalMoveUpdate(player, targetX, targetY) : 0;
+        return g_originalMoveUpdate
+            ? g_originalMoveUpdate(player, tileSafeRequested.x, -tileSafeRequested.y)
+            : 0;
 
     const float speed = MoveSpeed(player);
 
     if (currentSafe) {
 
 
-        Vec2 output = requested;
-        if (InBuffer(requested) ||
+        Vec2 output = tileSafeRequested;
+        if (InBuffer(tileSafeRequested) ||
             g_cfg.dodgeHitboxSize / speed > static_cast<float>(requestedSafeFor))
             output = current;
         return g_originalMoveUpdate ? g_originalMoveUpdate(player, output.x, -output.y) : 0;
@@ -616,7 +806,7 @@ int64_t __fastcall HookMoveUpdate(uintptr_t player, float targetX, float targetY
 
 
     const Candidate chosen = ChooseCandidate(current, gameTime, threats, enemies);
-    Vec2 output = requested;
+    Vec2 output = tileSafeRequested;
     if (chosen.position.x != 0.0f || chosen.position.y != 0.0f) {
         const float distance = Distance(current, chosen.position);
         const int travelMs = static_cast<int>(distance / speed);

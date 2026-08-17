@@ -57,7 +57,7 @@ std::string StateText(int vk, const char* mode) {
 }
 
 void GatherRows(std::vector<Row>& rows) {
-    if (g_cfg.noclipEnabled) {
+    if (g_cfg.noclipHotkey.vk) {
         rows.push_back({"NoClip", StateText(g_cfg.noclipHotkey.vk, "toggle")});
     } else if (noclip::GateActive()) {
         rows.push_back({"NoClip", "[active] auto"});
@@ -72,6 +72,14 @@ void GatherRows(std::vector<Row>& rows) {
 
     if (g_cfg.socketFu)
         rows.push_back({"SocketFU", StateText(g_cfg.socketFuHotkey.vk, "toggle")});
+
+    if (g_cfg.puppeteerEnabled)
+        rows.push_back({"Puppeteer",
+                        StateText(g_cfg.puppeteerHotkey.vk, "toggle")});
+
+    if (g_cfg.fameBot)
+        rows.push_back({"Fame Bot",
+                        StateText(g_cfg.fameBotHotkey.vk, "toggle")});
 
     const int speedKey = g_cfg.speedToggleKey ? g_cfg.speedToggleKey
                                                : g_cfg.speedHackHotkey;

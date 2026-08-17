@@ -381,11 +381,56 @@ namespace menu {
             ImGui::TextDisabled("SocketFU remains installed; the old Mods page has been removed.");
         }
 
+        void PuppeteerTab() {
+            ImGui::TextUnformatted("Puppeteer / AutoPilot");
+            ImGui::Separator();
+            ImGui::Checkbox("Enable Puppeteer", &g_cfg.puppeteerEnabled);
+            LabelHotkey("Toggle Key", "puppeteerHotkey", g_cfg.puppeteerHotkey);
+            ImGui::Checkbox("Click to Move", &g_cfg.puppeteerClickToMove);
+            ImGui::Checkbox("Show Puppeteer Overlay", &g_cfg.puppeteerOverlay);
+            ImGui::Spacing();
+            ImGui::SeparatorText("Follow Player Module");
+            ImGui::Checkbox("Enable Player Follow", &g_cfg.followPlayer);
+            ImGui::InputText("Player Username", g_cfg.followPlayerName,
+                             sizeof(g_cfg.followPlayerName));
+            ImGui::SliderFloat("Follow Distance", &g_cfg.followPlayerDistance,
+                               0.5f, 6.0f, "%.1f tiles");
+            ImGui::Checkbox("Auto NoClip##Follow", &g_cfg.automationAutoNoClip);
+            ImGui::TextDisabled("Matches the username exactly (case-insensitive). Follow takes priority over Puppeteer.");
+            ImGui::Spacing();
+            ImGui::SeparatorText("Fame Bot (Experimental)");
+            ImGui::Checkbox("Enable Fame Bot", &g_cfg.fameBot);
+            if (g_cfg.fameBot) {
+                LabelHotkey("Toggle Key", "fameBotHotkey", g_cfg.fameBotHotkey);
+                ImGui::Checkbox("Auto Fire Near Enemies", &g_cfg.fameBotAutoFire);
+                ImGui::Checkbox("Auto NoClip##Fame", &g_cfg.automationAutoNoClip);
+                ImGui::SliderFloat("Beacon Return Interval", &g_cfg.fameBotReturnSeconds,
+                                   15.0f, 300.0f, "%.0f seconds");
+                ImGui::SliderFloat("Roam Radius", &g_cfg.fameBotRoamRadius,
+                                   3.0f, 25.0f, "%.1f tiles");
+                ImGui::TextWrapped("Finds the Carboniferous Beacon, searches randomly for enemies, "
+                                   "and walks back to the beacon safely on the return timer.");
+            }
+            ImGui::Spacing();
+            if (g_cfg.puppeteerClickToMove) {
+                ImGui::TextWrapped("Click the world to set a destination. Clicking a portal "
+                                   "keeps the game's normal portal interaction available.");
+            } else {
+                ImGui::TextWrapped("Hold left mouse to follow the cursor. Release to stop. "
+                                   "Portal clicks continue to reach the game normally.");
+            }
+            ImGui::TextDisabled("Mouse input is ignored while the client menu owns the cursor.");
+        }
+
         void AimTab() {
             ImGui::TextUnformatted("Auto Aim Settings");
             ImGui::Separator();
             LabelHotkey("Magnet Aim Toggle", "aimbotHotkey", g_cfg.aimbotHotkey);
             ImGui::Checkbox("Auto Aim  ", &g_cfg.autoAim);
+            ImGui::Checkbox("Experimental EP Native-Range Aura",
+                            &g_cfg.experimentalEpRangeAura);
+            if (g_cfg.experimentalEpRangeAura)
+                ImGui::TextDisabled("Advances the native subattack/burst group 1.99 tiles and aligns its shots.");
             static const char* styles[] = { "Distance", "Cursor", "Health" };
             ImGui::Combo("Targeting Style", &g_cfg.targetingStyle, styles, 3);
             ImGui::Checkbox("Magnet Aim", &g_cfg.magnetAim);
@@ -403,6 +448,10 @@ namespace menu {
             ImGui::TextUnformatted("Auto Dodge Settings");
             ImGui::Separator();
             ImGui::Checkbox("Dodge Projectiles", &g_cfg.dodgeProjectiles);
+            ImGui::Checkbox("Avoid Damaging Tiles", &g_cfg.dodgeDamagingTiles);
+            ImGui::Checkbox("Emergency 0.5 Tile Microstep", &g_cfg.dodgeMicrostep);
+            if (g_cfg.dodgeMicrostep)
+                ImGui::TextDisabled("Normal movement until an imminent hit, then instantly takes one safe microstep.");
             ImGui::Checkbox("Hold Key To Suspend\t", &g_cfg.dodgeHoldToToggle);
             ImGui::SameLine();
             HotkeyWidget("dodgingHotkey", g_cfg.dodgingHotkey);
@@ -414,6 +463,14 @@ namespace menu {
             ImGui::Checkbox("Avoid Units", &g_cfg.dodgeAvoidUnits);
             ImGui::SliderFloat("Unit Avoidance Scale", &g_cfg.dodgeUnitAvoidanceScale, 0.0f, 1.5f, "%.2f");
             ImGui::SliderFloat("Keep Distance From Enemies (tiles)", &g_cfg.dodgeKeepDistance, 0.0f, 8.0f, "%.1f");
+            ImGui::Separator();
+            ImGui::Checkbox("Follow Moonlight Lantern", &g_cfg.followLantern);
+            if (g_cfg.followLantern) {
+                ImGui::InputInt("Lantern Object Type", &g_cfg.lanternType);
+                ImGui::SliderFloat("Lantern Follow Distance", &g_cfg.lanternFollowDistance,
+                                   0.1f, 2.0f, "%.2f tiles");
+                ImGui::TextDisabled("Standard MV Lantern System: 20454 (0x4FE6).");
+            }
             ImGui::Checkbox("Old Dodge Logic (don't use this)", &g_cfg.oldDodgeLogic);
         }
 
@@ -553,6 +610,8 @@ namespace menu {
             ImGui::Checkbox("Enabled##noclip", &g_cfg.noclipEnabled);
             LabelHotkey("Magnet Aim Toggle", "aimbotHotkeyAll", g_cfg.aimbotHotkey);
             LabelHotkey("SocketFU Toggle", "socketFuHotkeyAll", g_cfg.socketFuHotkey);
+            LabelHotkey("Puppeteer Toggle", "puppeteerHotkeyAll", g_cfg.puppeteerHotkey);
+            LabelHotkey("Fame Bot Toggle", "fameBotHotkeyAll", g_cfg.fameBotHotkey);
             ImGui::Spacing();
             ImGui::TextWrapped("NoClip stays enabled until its key is pressed again. "
                                "Press Backspace or Escape while selecting a bind to clear it.");
@@ -717,8 +776,8 @@ namespace menu {
         ImGui::SetCursorPos(ImVec2(14, 78));
         ImGui::BeginChild("##sidebar", ImVec2(sidebarW-28, -82), false,
                           ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-        const char* labels[] = {"SocketFU","Auto Aim","Auto Dodge","Render","Spoofing","Keybinds","Debug / Misc"};
-        for (int i=0;i<7;++i) {
+        const char* labels[] = {"SocketFU","Puppeteer","Auto Aim","Auto Dodge","Render","Spoofing","Keybinds","Debug / Misc"};
+        for (int i=0;i<8;++i) {
             SidebarButton(labels[i], i, sidebarW-41);
             ImGui::Dummy(ImVec2(0,3));
         }
@@ -729,12 +788,13 @@ namespace menu {
         ImGui::BeginChild("##content", ImVec2(-50, -112), false);
         switch (s_activeTab) {
             case 0: SocketFuTab(); break;
-            case 1: AimTab(); break;
-            case 2: DodgeTab(); break;
-            case 3: RenderTab(); break;
-            case 4: SpooferTab(); break;
-            case 5: KeybindsTab(); break;
-            case 6: MiscTab(); break;
+            case 1: PuppeteerTab(); break;
+            case 2: AimTab(); break;
+            case 3: DodgeTab(); break;
+            case 4: RenderTab(); break;
+            case 5: SpooferTab(); break;
+            case 6: KeybindsTab(); break;
+            case 7: MiscTab(); break;
         }
         ImGui::EndChild();
         ImGui::PopStyleVar();

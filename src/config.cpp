@@ -125,20 +125,34 @@ void Config_Load() {
     CFG_BOOL(socketFuUseSecondSpeed); CFG_BOOL(socketFuRestrictMovement);
     CFG_BOOL(socketFuNoClip); CFG_BOOL(autoNoClip); CFG_BOOL(noclipEnabled);
     g_cfg.noclipHotkey.vk = ReadInt("noclipHotkey", g_cfg.noclipHotkey.vk);
+    CFG_BOOL(puppeteerEnabled); CFG_BOOL(puppeteerClickToMove);
+    CFG_BOOL(puppeteerOverlay);
+    g_cfg.puppeteerHotkey.vk = ReadInt("puppeteerHotkey", g_cfg.puppeteerHotkey.vk);
+    CFG_BOOL(fameBot); CFG_BOOL(fameBotAutoFire); CFG_BOOL(automationAutoNoClip);
+    g_cfg.fameBotHotkey.vk = ReadInt("fameBotHotkey", g_cfg.fameBotHotkey.vk);
+    CFG_FLOAT(fameBotReturnSeconds); CFG_FLOAT(fameBotRoamRadius);
+    CFG_BOOL(followPlayer);
+    ReadString("followPlayerName", g_cfg.followPlayerName,
+               sizeof(g_cfg.followPlayerName));
+    CFG_FLOAT(followPlayerDistance);
     CFG_BOOL(antiIdle);
     CFG_FLOAT(cameraZoomScale);
     CFG_BOOL(autoAim); CFG_BOOL(magnetAim); CFG_BOOL(magnetRangeExt);
+    CFG_BOOL(experimentalEpRangeAura);
     CFG_INT(targetingStyle); CFG_FLOAT(magnetAimRange);
     CFG_BOOL(projectileNoClip); CFG_BOOL(renderAimInfo);
     CFG_BOOL(renderMagnetRange); CFG_BOOL(renderNormalAimRange);
     g_cfg.aimbotHotkey.vk = ReadInt("aimbotHotkey", g_cfg.aimbotHotkey.vk);
 
-    CFG_BOOL(autoDodge); CFG_BOOL(dodgeProjectiles); CFG_BOOL(dodgeHoldToToggle);
+    CFG_BOOL(autoDodge); CFG_BOOL(dodgeProjectiles); CFG_BOOL(dodgeDamagingTiles);
+    CFG_BOOL(dodgeMicrostep); CFG_BOOL(dodgeHoldToToggle);
     g_cfg.dodgingHotkey.vk = ReadInt("dodgingHotkey", g_cfg.dodgingHotkey.vk);
     CFG_BOOL(dodgeInvisible); CFG_BOOL(butterWalk); CFG_FLOAT(dodgeHitboxSize);
     CFG_INT(dodgeMoveAwayMs); CFG_BOOL(dodgeAoeBombs); CFG_BOOL(dodgeAvoidUnits);
     CFG_FLOAT(dodgeUnitAvoidanceScale); CFG_FLOAT(dodgeKeepDistance);
     CFG_BOOL(oldDodgeLogic);
+    CFG_BOOL(followLantern); CFG_INT(lanternType);
+    CFG_FLOAT(lanternFollowDistance);
     CFG_BOOL(enablePoisBags); CFG_BOOL(playSoundForBags);
     CFG_BOOL(bagEgg); CFG_BOOL(bagBrown); CFG_BOOL(bagPink); CFG_BOOL(bagPurple);
     CFG_BOOL(bagCyan); CFG_BOOL(bagDarkBlue); CFG_BOOL(bagWhite); CFG_BOOL(bagGold);
@@ -187,6 +201,16 @@ void Config_Load() {
     g_cfg.projectileBreadcrumbThickness =
         std::clamp(g_cfg.projectileBreadcrumbThickness, 0.5f, 4.0f);
     g_cfg.aoeDebugRadius = std::clamp(g_cfg.aoeDebugRadius, 0.25f, 4.0f);
+    g_cfg.lanternType = std::clamp(g_cfg.lanternType, 1, 1000000);
+    if (g_cfg.lanternType == 20880) g_cfg.lanternType = 20454;
+    g_cfg.lanternFollowDistance =
+        std::clamp(g_cfg.lanternFollowDistance, 0.1f, 2.0f);
+    g_cfg.fameBotReturnSeconds =
+        std::clamp(g_cfg.fameBotReturnSeconds, 15.0f, 300.0f);
+    g_cfg.fameBotRoamRadius =
+        std::clamp(g_cfg.fameBotRoamRadius, 3.0f, 25.0f);
+    g_cfg.followPlayerDistance =
+        std::clamp(g_cfg.followPlayerDistance, 0.5f, 6.0f);
     if (g_cfg.noclipHotkey.vk > 0xFF) g_cfg.noclipHotkey.vk = 0;
 }
 
@@ -213,20 +237,33 @@ void Config_Save() {
     SAVE_BOOL(socketFuUseSecondSpeed); SAVE_BOOL(socketFuRestrictMovement);
     SAVE_BOOL(socketFuNoClip); SAVE_BOOL(autoNoClip); SAVE_BOOL(noclipEnabled);
     WriteInt("noclipHotkey", g_cfg.noclipHotkey.vk);
+    SAVE_BOOL(puppeteerEnabled); SAVE_BOOL(puppeteerClickToMove);
+    SAVE_BOOL(puppeteerOverlay);
+    WriteInt("puppeteerHotkey", g_cfg.puppeteerHotkey.vk);
+    SAVE_BOOL(fameBot); SAVE_BOOL(fameBotAutoFire); SAVE_BOOL(automationAutoNoClip);
+    WriteInt("fameBotHotkey", g_cfg.fameBotHotkey.vk);
+    SAVE_FLOAT(fameBotReturnSeconds); SAVE_FLOAT(fameBotRoamRadius);
+    SAVE_BOOL(followPlayer);
+    WriteString("followPlayerName", g_cfg.followPlayerName);
+    SAVE_FLOAT(followPlayerDistance);
     SAVE_BOOL(antiIdle);
     SAVE_FLOAT(cameraZoomScale);
     SAVE_BOOL(autoAim); SAVE_BOOL(magnetAim); SAVE_BOOL(magnetRangeExt);
+    SAVE_BOOL(experimentalEpRangeAura);
     SAVE_INT(targetingStyle); SAVE_FLOAT(magnetAimRange);
     SAVE_BOOL(projectileNoClip); SAVE_BOOL(renderAimInfo);
     SAVE_BOOL(renderMagnetRange); SAVE_BOOL(renderNormalAimRange);
     WriteInt("aimbotHotkey", g_cfg.aimbotHotkey.vk);
 
-    SAVE_BOOL(autoDodge); SAVE_BOOL(dodgeProjectiles); SAVE_BOOL(dodgeHoldToToggle);
+    SAVE_BOOL(autoDodge); SAVE_BOOL(dodgeProjectiles); SAVE_BOOL(dodgeDamagingTiles);
+    SAVE_BOOL(dodgeMicrostep); SAVE_BOOL(dodgeHoldToToggle);
     WriteInt("dodgingHotkey", g_cfg.dodgingHotkey.vk);
     SAVE_BOOL(dodgeInvisible); SAVE_BOOL(butterWalk); SAVE_FLOAT(dodgeHitboxSize);
     SAVE_INT(dodgeMoveAwayMs); SAVE_BOOL(dodgeAoeBombs); SAVE_BOOL(dodgeAvoidUnits);
     SAVE_FLOAT(dodgeUnitAvoidanceScale); SAVE_FLOAT(dodgeKeepDistance);
     SAVE_BOOL(oldDodgeLogic);
+    SAVE_BOOL(followLantern); SAVE_INT(lanternType);
+    SAVE_FLOAT(lanternFollowDistance);
     SAVE_BOOL(enablePoisBags); SAVE_BOOL(playSoundForBags);
     SAVE_BOOL(bagEgg); SAVE_BOOL(bagBrown); SAVE_BOOL(bagPink); SAVE_BOOL(bagPurple);
     SAVE_BOOL(bagCyan); SAVE_BOOL(bagDarkBlue); SAVE_BOOL(bagWhite); SAVE_BOOL(bagGold);
